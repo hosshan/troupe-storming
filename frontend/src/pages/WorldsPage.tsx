@@ -13,8 +13,13 @@ import {
   DialogActions,
   TextField,
   Fab,
+  Switch,
+  FormControlLabel,
+  Slider,
+  CircularProgress,
+  LinearProgress,
 } from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, People as PeopleIcon, Chat as ChatIcon } from '@mui/icons-material';
+import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, People as PeopleIcon, Chat as ChatIcon, AutoFixHigh as GenerateIcon } from '@mui/icons-material';
 import { useNavigate } from 'react-router-dom';
 import { World, CreateWorldRequest } from '../types';
 import { worldsApi } from '../services/api';
@@ -24,12 +29,21 @@ const WorldsPage: React.FC = () => {
   const [worlds, setWorlds] = useState<World[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
+  const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [editingWorld, setEditingWorld] = useState<World | null>(null);
   const [formData, setFormData] = useState<CreateWorldRequest>({
     name: '',
     description: '',
     background: '',
   });
+  const [generateData, setGenerateData] = useState({
+    keywords: '',
+    generate_characters: true,
+    character_count: 3,
+  });
+  const [generating, setGenerating] = useState(false);
+  const [progressMessage, setProgressMessage] = useState('');
+  const [progressValue, setProgressValue] = useState(0);
 
   useEffect(() => {
     loadWorlds();
@@ -91,6 +105,68 @@ const WorldsPage: React.FC = () => {
     }
   };
 
+  const handleOpenGenerateDialog = () => {
+    setGenerateData({
+      keywords: '',
+      generate_characters: true,
+      character_count: 3,
+    });
+    setGenerateDialogOpen(true);
+  };
+
+  const handleCloseGenerateDialog = () => {
+    setGenerateDialogOpen(false);
+    setGenerateData({
+      keywords: '',
+      generate_characters: true,
+      character_count: 3,
+    });
+  };
+
+  const handleGenerate = async () => {
+    if (!generateData.keywords.trim()) {
+      alert('キーワードを入力してください');
+      return;
+    }
+
+    setGenerating(true);
+    setProgressMessage('準備中...');
+    setProgressValue(0);
+
+    try {
+      worldsApi.generateStream(
+        generateData,
+        // onProgress
+        (message: string, progress: number) => {
+          setProgressMessage(message);
+          setProgressValue(progress);
+        },
+        // onComplete
+        (result: any) => {
+          setGenerating(false);
+          handleCloseGenerateDialog();
+          loadWorlds();
+          
+          if (result.characters.length > 0) {
+            alert(`世界「${result.world.name}」と${result.characters.length}人のキャラクターを生成しました！`);
+          } else {
+            alert(`世界「${result.world.name}」を生成しました！`);
+          }
+        },
+        // onError
+        (error: string) => {
+          setGenerating(false);
+          console.error('Failed to generate world:', error);
+          alert(`世界の生成に失敗しました: ${error}`);
+        }
+      );
+    } catch (error) {
+      setGenerating(false);
+      console.error('Failed to start generation:', error);
+      alert('世界の生成開始に失敗しました');
+    }
+  };
+
   if (loading) {
     return <Typography>Loading...</Typography>;
   }
@@ -101,6 +177,13 @@ const WorldsPage: React.FC = () => {
         <Typography variant="h4" component="h1">
           世界管理
         </Typography>
+        <Button
+          variant="outlined"
+          startIcon={<GenerateIcon />}
+          onClick={handleOpenGenerateDialog}
+        >
+          AIで世界を生成
+        </Button>
       </Box>
 
       <Grid container spacing={3}>
@@ -205,6 +288,83 @@ const WorldsPage: React.FC = () => {
           <Button onClick={handleCloseDialog}>キャンセル</Button>
           <Button onClick={handleSubmit} variant="contained">
             {editingWorld ? '更新' : '作成'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* 世界生成ダイアログ */}
+      <Dialog open={generateDialogOpen} onClose={handleCloseGenerateDialog} maxWidth="sm" fullWidth>
+        <DialogTitle>AIで世界を生成</DialogTitle>
+        <DialogContent>
+          <TextField
+            autoFocus
+            margin="dense"
+            label="キーワード"
+            placeholder="例: ドラゴン、魔法学校、宇宙ステーション"
+            fullWidth
+            variant="outlined"
+            value={generateData.keywords}
+            onChange={(e) => setGenerateData({ ...generateData, keywords: e.target.value })}
+            sx={{ mb: 3 }}
+            helperText="世界のテーマやキーワードを入力してください"
+          />
+          
+          <FormControlLabel
+            control={
+              <Switch
+                checked={generateData.generate_characters}
+                onChange={(e) => setGenerateData({ ...generateData, generate_characters: e.target.checked })}
+              />
+            }
+            label="キャラクターも一緒に生成する"
+            sx={{ mb: 2 }}
+          />
+          
+          {generateData.generate_characters && (
+            <Box sx={{ mb: 2 }}>
+              <Typography gutterBottom>
+                生成するキャラクター数: {generateData.character_count}人
+              </Typography>
+              <Slider
+                value={generateData.character_count}
+                onChange={(_, value) => setGenerateData({ ...generateData, character_count: value as number })}
+                min={1}
+                max={5}
+                step={1}
+                marks
+                valueLabelDisplay="auto"
+              />
+            </Box>
+          )}
+
+          {/* Progress display during generation */}
+          {generating && (
+            <Box sx={{ mt: 3, mb: 2 }}>
+              <Typography variant="body2" color="text.secondary" gutterBottom>
+                {progressMessage}
+              </Typography>
+              <LinearProgress 
+                variant="determinate" 
+                value={progressValue} 
+                sx={{ height: 8, borderRadius: 4 }}
+              />
+              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
+                {progressValue}%
+              </Typography>
+            </Box>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseGenerateDialog} disabled={generating}>
+            キャンセル
+          </Button>
+          <Button 
+            onClick={handleGenerate} 
+            variant="contained" 
+            disabled={generating || !generateData.keywords.trim()}
+            startIcon={generating ? <CircularProgress size={20} /> : <GenerateIcon />}
+          >
+            {generating ? '生成中...' : '生成'}
           </Button>
         </DialogActions>
       </Dialog>

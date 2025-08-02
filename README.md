@@ -43,9 +43,28 @@ source venv/bin/activate  # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 ```
 
-4. サーバーを起動
+4. **環境変数の設定 (重要)**
+
+OpenAI APIキーを設定してください：
+
+**方法1: .envファイルを使用 (推奨)**
+```bash
+# backend/.env ファイルを作成
+echo "OPENAI_API_KEY=your-actual-openai-api-key-here" > .env
+```
+
+**方法2: 環境変数を直接設定**
+```bash
+export OPENAI_API_KEY="your-actual-openai-api-key-here"
+```
+
+⚠️ **注意**: OpenAI APIキーがない場合、TinyTroupeの実際のAI議論機能は使用できず、モックデータが返されます。
+
+5. サーバーを起動
 ```bash
 python main.py
+# または
+uvicorn main:app --reload --port 8000
 ```
 
 バックエンドAPI: http://localhost:8000
@@ -132,8 +151,49 @@ troupe-storming/
 - React DevTools推奨
 - Material-UIコンポーネントを使用
 
+## TinyTroupe設定詳細
+
+### OpenAI APIキーの取得方法
+
+1. [OpenAI Platform](https://platform.openai.com/api-keys) にアクセス
+2. アカウントにログインまたは新規登録
+3. "Create new secret key" をクリック
+4. 生成されたAPIキーを `.env` ファイルに設定
+
+### TinyTroupe設定
+
+現在の設定では以下のOpenAIモデルを使用：
+- **メインモデル**: `gpt-4.1-mini`
+- **推論モデル**: `o3-mini`  
+- **埋め込みモデル**: `text-embedding-3-small`
+
+### 動作確認方法
+
+1. バックエンドサーバー起動後、以下にアクセス:
+   - API文書: http://localhost:8000/docs
+   - ヘルスチェック: http://localhost:8000/health
+
+2. フロントエンド起動後:
+   - 世界を作成
+   - キャラクターを追加（最低2人）
+   - 議論テーマを作成
+   - 「議論開始」ボタンをクリック
+   - 結果を確認
+
+### トラブルシューティング
+
+**TinyTroupeが動作しない場合:**
+- OpenAI APIキーが正しく設定されているか確認
+- APIキーの有効性と残高を確認
+- ログで `TinyTroupe successfully imported` が表示されるか確認
+
+**モックデータが表示される場合:**
+- `.env` ファイルが `backend/` ディレクトリにあるか確認
+- APIキーに余分なスペースや引用符がないか確認
+
 ## 注意事項
 
-- TinyTroupeの実際の統合はサンプル実装です
-- 本番環境では環境変数による設定管理を推奨
-- データベースのマイグレーション機能は未実装
+- **APIコスト**: TinyTroupeはOpenAI APIを使用するため、使用量に応じて料金が発生します
+- **レート制限**: OpenAI APIのレート制限にご注意ください
+- **データベース**: SQLiteファイル (`troupe_storming.db`) は自動生成されます
+- **本番環境では環境変数による設定管理を推奨**

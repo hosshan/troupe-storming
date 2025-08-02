@@ -21,7 +21,7 @@ class World(WorldBase):
     updated_at: Optional[datetime] = None
     
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 class CharacterBase(BaseModel):
     name: str
@@ -47,7 +47,7 @@ class Character(CharacterBase):
     updated_at: Optional[datetime] = None
     
     class Config:
-        from_attributes = True
+        orm_mode = True
 
 class DiscussionBase(BaseModel):
     theme: str
@@ -71,4 +71,4 @@ class Discussion(DiscussionBase):
     updated_at: Optional[datetime] = None
     
     class Config:
-        from_attributes = True
+        orm_mode = True

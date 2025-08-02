@@ -6,7 +6,11 @@
       "Bash(python:*)",
       "Bash(npm install)",
       "Bash(pip uninstall:*)",
-      "Bash(pkill:*)"
+      "Bash(pkill:*)",
+      "Bash(sqlite3:*)",
+      "Bash(curl:*)",
+      "Bash(lsof:*)",
+      "Bash(uvicorn:*)"
     ],
     "deny": []
   }

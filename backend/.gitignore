@@ -1,0 +1,12 @@
+# Database files
+troupe_storming.db
+*.db
+*.sqlite
+*.sqlite3
+
+# Python cache
+__pycache__/
+*.pyc
+
+# Environment
+.env

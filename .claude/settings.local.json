@@ -17,7 +17,10 @@
       "Bash(npx tsc:*)",
       "Bash(ls:*)",
       "Bash(find:*)",
-      "Bash(mv:*)"
+      "Bash(mv:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git log:*)"
     ],
     "deny": []
   }

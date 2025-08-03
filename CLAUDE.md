@@ -80,3 +80,48 @@ Detailed technical documentation is available in the `docs/` directory:
 - **docs/REFACTOR_PLAN.md**: Refactoring strategy for eliminating code duplication, with specific examples of redundant implementations and integration recommendations
 
 **Note**: The codebase currently has some duplicate implementations for discussion functionality that should be consolidated according to the refactoring plan.
+
+## Git Commit Guidelines
+
+This project follows [Conventional Commits](https://www.conventionalcommits.org/) specification for commit messages.
+
+### Commit Message Format
+```
+<type>[optional scope]: <description>
+
+[optional body]
+
+[optional footer(s)]
+```
+
+### Types
+- **feat**: A new feature for the user
+- **fix**: A bug fix for the user
+- **docs**: Documentation only changes
+- **style**: Changes that do not affect the meaning of the code (white-space, formatting, etc)
+- **refactor**: A code change that neither fixes a bug nor adds a feature
+- **perf**: A code change that improves performance
+- **test**: Adding missing tests or correcting existing tests
+- **chore**: Changes to the build process or auxiliary tools and libraries
+
+### Scopes (optional)
+- **backend**: Backend/API changes
+- **frontend**: Frontend/UI changes
+- **docs**: Documentation changes
+- **config**: Configuration changes
+- **deps**: Dependency changes
+
+### Examples
+```bash
+feat(backend): add WebSocket support for real-time discussion updates
+fix(frontend): resolve infinite loading issue in discussion results page
+docs: add code architecture documentation
+refactor(backend): consolidate duplicate discussion generation methods
+chore(deps): update TinyTroupe to latest version
+```
+
+### Commit Strategy
+- Commit meaningful units of work frequently
+- Each commit should represent a complete, working change
+- Use descriptive commit messages that explain the "why" not just the "what"
+- Break large changes into smaller, logical commits

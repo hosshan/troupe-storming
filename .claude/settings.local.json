@@ -10,7 +10,9 @@
       "Bash(sqlite3:*)",
       "Bash(curl:*)",
       "Bash(lsof:*)",
-      "Bash(uvicorn:*)"
+      "Bash(uvicorn:*)",
+      "Bash(kill:*)",
+      "Bash(jobs)"
     ],
     "deny": []
   }

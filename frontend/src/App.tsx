@@ -9,6 +9,7 @@ import Container from '@mui/material/Container';
 import WorldsPage from './pages/WorldsPage';
 import CharactersPage from './pages/CharactersPage';
 import DiscussionsPage from './pages/DiscussionsPage';
+import DiscussionResultsPageSimple from './pages/DiscussionResultsPageSimple';
 
 const theme = createTheme({
   palette: {
@@ -40,6 +41,7 @@ function App() {
             <Route path="/worlds" element={<WorldsPage />} />
             <Route path="/characters/:worldId" element={<CharactersPage />} />
             <Route path="/discussions/:worldId" element={<DiscussionsPage />} />
+            <Route path="/discussions/:worldId/results/:discussionId" element={<DiscussionResultsPageSimple />} />
           </Routes>
         </Container>
       </Router>

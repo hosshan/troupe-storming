@@ -10,7 +10,17 @@
       "Bash(sqlite3:*)",
       "Bash(curl:*)",
       "Bash(lsof:*)",
-      "Bash(uvicorn:*)"
+      "Bash(uvicorn:*)",
+      "Bash(kill:*)",
+      "Bash(jobs)",
+      "Bash(npm run build:*)",
+      "Bash(npx tsc:*)",
+      "Bash(ls:*)",
+      "Bash(find:*)",
+      "Bash(mv:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git log:*)"
     ],
     "deny": []
   }

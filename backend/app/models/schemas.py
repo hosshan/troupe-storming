@@ -10,6 +10,11 @@ class WorldBase(BaseModel):
 class WorldCreate(WorldBase):
     pass
 
+class WorldGenerateRequest(BaseModel):
+    keywords: str
+    generate_characters: bool = True
+    character_count: int = 3
+
 class WorldUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None

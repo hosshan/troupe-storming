@@ -5,7 +5,7 @@ import uvicorn
 from dotenv import load_dotenv
 from app.database.config import engine
 from app.models import models
-from app.api import worlds, characters, discussions
+from app.api import worlds, characters, discussions, websocket_discussions
 
 # Load environment variables from .env file
 load_dotenv()
@@ -29,6 +29,7 @@ app.add_middleware(
 app.include_router(worlds.router, prefix="/api")
 app.include_router(characters.router, prefix="/api")
 app.include_router(discussions.router, prefix="/api")
+app.include_router(websocket_discussions.router)
 
 @app.get("/")
 async def root():

@@ -71,3 +71,12 @@ This is a full-stack brainstorming application that integrates with Microsoft's 
 - TinyTroupe service includes extensive logging for debugging AI interactions
 - Frontend uses Material-UI components consistently
 - React Router handles client-side routing
+
+## Documentation
+
+Detailed technical documentation is available in the `docs/` directory:
+
+- **docs/ARCHITECTURE.md**: Complete code structure analysis, including discussion implementation approaches (REST API, Server-Sent Events, WebSocket) and component responsibilities
+- **docs/REFACTOR_PLAN.md**: Refactoring strategy for eliminating code duplication, with specific examples of redundant implementations and integration recommendations
+
+**Note**: The codebase currently has some duplicate implementations for discussion functionality that should be consolidated according to the refactoring plan.

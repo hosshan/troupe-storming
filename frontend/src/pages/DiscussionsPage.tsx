@@ -16,10 +16,6 @@ import {
   Breadcrumbs,
   Link,
   Chip,
-  Paper,
-  List,
-  ListItem,
-  ListItemText,
 } from '@mui/material';
 import { Add as AddIcon, PlayArrow as PlayIcon, ArrowBack as ArrowBackIcon, Refresh as RefreshIcon } from '@mui/icons-material';
 import { useNavigate, useParams } from 'react-router-dom';
@@ -34,8 +30,6 @@ const DiscussionsPage: React.FC = () => {
   const [discussions, setDiscussions] = useState<Discussion[]>([]);
   const [loading, setLoading] = useState(true);
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [resultDialogOpen, setResultDialogOpen] = useState(false);
-  const [selectedDiscussion, setSelectedDiscussion] = useState<Discussion | null>(null);
   const [formData, setFormData] = useState<CreateDiscussionRequest>({
     theme: '',
     description: '',
@@ -107,18 +101,14 @@ const DiscussionsPage: React.FC = () => {
     }
   };
 
-  const handleStartDiscussion = async (discussionId: number) => {
-    try {
-      await discussionsApi.start(discussionId);
-      loadDiscussions();
-    } catch (error) {
-      console.error('Failed to start discussion:', error);
-    }
+  const handleStartDiscussion = (discussionId: number) => {
+    // Navigate to the discussion results page which will handle starting the discussion
+    navigate(`/discussions/${worldId}/results/${discussionId}`);
   };
 
   const handleViewResult = (discussion: Discussion) => {
-    setSelectedDiscussion(discussion);
-    setResultDialogOpen(true);
+    // Navigate to the discussion results page
+    navigate(`/discussions/${worldId}/results/${discussion.id}`);
   };
 
   const getStatusColor = (status: string) => {
@@ -251,12 +241,12 @@ const DiscussionsPage: React.FC = () => {
                     議論開始
                   </Button>
                 )}
-                {discussion.status === 'completed' && (
+                {(discussion.status === 'completed' || discussion.status === 'running') && (
                   <Button
                     size="small"
                     onClick={() => handleViewResult(discussion)}
                   >
-                    結果を見る
+                    {discussion.status === 'completed' ? '結果を見る' : '議論を見る'}
                   </Button>
                 )}
               </CardActions>
@@ -307,41 +297,6 @@ const DiscussionsPage: React.FC = () => {
         </DialogActions>
       </Dialog>
 
-      <Dialog
-        open={resultDialogOpen}
-        onClose={() => setResultDialogOpen(false)}
-        maxWidth="lg"
-        fullWidth
-      >
-        <DialogTitle>議論結果: {selectedDiscussion?.theme}</DialogTitle>
-        <DialogContent>
-          {selectedDiscussion?.result && (
-            <Box>
-              <Typography variant="h6" gutterBottom>
-                参加者: {selectedDiscussion.result.participants?.join(', ')}
-              </Typography>
-              <Paper sx={{ p: 2, mt: 2 }}>
-                <Typography variant="h6" gutterBottom>
-                  議論の流れ
-                </Typography>
-                <List>
-                  {selectedDiscussion.result.messages?.map((message: any, index: number) => (
-                    <ListItem key={index}>
-                      <ListItemText
-                        primary={`${message.speaker}: ${message.content}`}
-                        secondary={message.timestamp}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              </Paper>
-            </Box>
-          )}
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setResultDialogOpen(false)}>閉じる</Button>
-        </DialogActions>
-      </Dialog>
     </Box>
   );
 };

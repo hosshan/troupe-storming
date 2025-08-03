@@ -556,6 +556,312 @@ class TinyTroupeService:
         
         return messages
     
+    async def run_discussion_with_streaming(self, discussion, characters, world, stream_data):
+        """Run discussion with real-time streaming updates to stream_data"""
+        logger.info(f"=== STARTING STREAMING DISCUSSION: {discussion.theme} ===")
+        
+        try:
+            # First try TinyTroupe if available
+            if self.tinytroupe_available and self.api_key:
+                logger.info("🚀 USING TINYTROUPE for streaming discussion generation")
+                result = await self._create_tinytroupe_streaming_discussion_result(
+                    discussion, characters, world, stream_data
+                )
+                logger.info("✅ TinyTroupe streaming discussion completed successfully")
+                return result
+            # Fall back to OpenAI direct if available
+            elif self.openai_available and self.api_key:
+                logger.warning("⚠️ FALLING BACK to OpenAI direct API with streaming")
+                result = await self._create_ai_streaming_discussion_result(
+                    discussion, characters, world, stream_data
+                )
+                logger.info("✅ OpenAI direct streaming discussion completed")
+                return result
+            else:
+                logger.warning("⚠️ FALLING BACK to mock data with streaming")
+                result = await self._create_mock_streaming_discussion_result(
+                    discussion, characters, world, stream_data
+                )
+                logger.info("✅ Mock streaming discussion completed")
+                return result
+                
+        except Exception as e:
+            logger.error(f"❌ Error in run_discussion_with_streaming: {e}")
+            stream_data["error"] = str(e)
+            return {
+                "error": str(e),
+                "status": "failed"
+            }
+    
+    async def _create_tinytroupe_streaming_discussion_result(self, discussion, characters, world, stream_data):
+        """Create a discussion using TinyTroupe with real-time streaming"""
+        logger.info("🔧 Starting TinyTroupe streaming discussion creation...")
+        
+        try:
+            import os
+            import asyncio
+            
+            # Set OpenAI API key for TinyTroupe
+            os.environ['OPENAI_API_KEY'] = self.api_key
+            logger.info("🔑 OpenAI API key set for TinyTroupe")
+            
+            # Update progress
+            stream_data["progress"] = 75
+            stream_data["message"] = "TinyTroupeエージェントを作成中..."
+            
+            # Create TinyWorld and agents
+            tiny_world, agents = self.setup_world_agents(world, characters)
+            
+            if not tiny_world or not agents:
+                logger.error("❌ TinyWorld or agents creation failed")
+                # Fall back to AI discussion
+                return await self._create_ai_streaming_discussion_result(discussion, characters, world, stream_data)
+            
+            logger.info(f"✅ Successfully created TinyWorld with {len(agents)} agents")
+            
+            # Initialize messages with system message
+            messages = [
+                {
+                    "speaker": "システム",
+                    "content": f"TinyTroupeによる議論「{discussion.theme}」を開始します。",
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+            ]
+            stream_data["messages"] = messages
+            
+            # Set up the discussion topic
+            discussion_prompt = f"""
+            議論テーマ: {discussion.theme}
+            詳細: {discussion.description}
+            
+            このテーマについて、あなたの性格と背景に基づいて意見を述べてください。
+            建設的で多様な視点からの議論を行ってください。
+            """
+            
+            # Update progress
+            stream_data["progress"] = 80
+            stream_data["message"] = f"{len(agents)}人のエージェントが議論を開始..."
+            
+            # Have each agent respond one by one with real-time updates
+            logger.info("💭 Starting agent discussions with streaming...")
+            for i, agent in enumerate(agents):
+                try:
+                    logger.info(f"🤖 Processing agent {i+1}/{len(agents)}: {agent.name}")
+                    
+                    # Update progress for each agent
+                    progress = 80 + (15 * (i + 1) / len(agents))  # 80-95%
+                    stream_data["progress"] = min(95, int(progress))
+                    stream_data["message"] = f"{agent.name}が発言中..."
+                    
+                    # Make the agent think about the topic
+                    logger.info(f"🧠 Making {agent.name} think about the topic...")
+                    think_result = agent.think(discussion_prompt)
+                    logger.info(f"💡 {agent.name} thinking result: {str(think_result)[:100]}...")
+                    
+                    # Get the agent's response
+                    logger.info(f"🗣️ Getting response from {agent.name}...")
+                    response = agent.act(f"「{discussion.theme}」について、あなたの意見を2-3文で述べてください。")
+                    logger.info(f"📝 {agent.name} response: {str(response)[:100]}...")
+                    
+                    # Process the response
+                    if response and str(response) != "None":
+                        # Extract the actual content from the response
+                        content = response.get('content', str(response)) if isinstance(response, dict) else str(response)
+                        
+                        # Add message immediately to stream
+                        new_message = {
+                            "speaker": agent.name,
+                            "content": content,
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                        messages.append(new_message)
+                        stream_data["messages"] = messages.copy()  # Update stream immediately
+                        
+                        logger.info(f"✅ Added streaming message from {agent.name}")
+                    else:
+                        logger.warning(f"⚠️ No response from {agent.name}, adding fallback message")
+                        # Add a fallback response
+                        fallback_message = {
+                            "speaker": agent.name,
+                            "content": f"{agent.name}として、「{discussion.theme}」について考えています...",
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                        messages.append(fallback_message)
+                        stream_data["messages"] = messages.copy()
+                    
+                    # Small delay between agents
+                    await asyncio.sleep(1)
+                    
+                except Exception as agent_error:
+                    logger.error(f"❌ Error getting response from agent {agent.name}: {agent_error}")
+                    # Add a fallback response for this agent
+                    fallback_message = {
+                        "speaker": agent.name,
+                        "content": f"{agent.name}として、「{discussion.theme}」について考えています...（エラーが発生しました）",
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }
+                    messages.append(fallback_message)
+                    stream_data["messages"] = messages.copy()
+            
+            return {
+                "discussion_id": discussion.id,
+                "theme": discussion.theme,
+                "world": world.name,
+                "participants": [char.name for char in characters],
+                "messages": messages,
+                "status": "completed",
+                "note": "Real TinyTroupe streaming discussion with AI agents"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in TinyTroupe streaming discussion generation: {e}")
+            error_str = str(e).lower()
+            if "insufficient_quota" in error_str or "quota" in error_str:
+                logger.warning("OpenAI API quota exceeded in streaming TinyTroupe, falling back to mock discussion")
+                return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data)
+            elif "rate_limit" in error_str or "429" in error_str:
+                logger.warning("OpenAI API rate limit exceeded in streaming TinyTroupe, falling back to mock discussion")
+                return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data)
+            else:
+                # Fall back to AI discussion
+                return await self._create_ai_streaming_discussion_result(discussion, characters, world, stream_data)
+    
+    async def _create_ai_streaming_discussion_result(self, discussion, characters, world, stream_data):
+        """Create an AI-powered discussion with streaming updates"""
+        try:
+            client = openai.OpenAI(api_key=self.api_key)
+            
+            messages = [
+                {
+                    "speaker": "システム",
+                    "content": f"議論テーマ「{discussion.theme}」について話し合いを開始します。",
+                    "timestamp": datetime.datetime.now().isoformat()
+                }
+            ]
+            stream_data["messages"] = messages
+            
+            # Generate discussion for each character with streaming
+            for i, character in enumerate(characters):
+                # Update progress
+                progress = 80 + (15 * (i + 1) / len(characters))  # 80-95%
+                stream_data["progress"] = min(95, int(progress))
+                stream_data["message"] = f"{character.name}が発言中..."
+                
+                prompt = f"""
+                あなたは{character.name}として振る舞ってください。
+                
+                キャラクター設定:
+                - 名前: {character.name}
+                - 説明: {character.description}
+                - 性格: {character.personality}
+                - 背景: {character.background}
+                
+                世界設定: {world.background}
+                
+                議論テーマ: {discussion.theme}
+                詳細: {discussion.description}
+                
+                {character.name}として、このテーマについてあなたの意見を2-3文で述べてください。
+                性格と背景を反映した自然な発言をしてください。
+                """
+                
+                try:
+                    response = client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=[
+                            {"role": "system", "content": "あなたは指定されたキャラクターとして自然な議論を行います。"},
+                            {"role": "user", "content": prompt}
+                        ],
+                        max_tokens=200,
+                        temperature=0.8
+                    )
+                    
+                    ai_response = response.choices[0].message.content.strip()
+                    
+                    new_message = {
+                        "speaker": character.name,
+                        "content": ai_response,
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }
+                    messages.append(new_message)
+                    stream_data["messages"] = messages.copy()  # Update stream immediately
+                    
+                except Exception as api_error:
+                    logger.error(f"OpenAI API error for {character.name}: {api_error}")
+                    # Add a fallback response for this character
+                    fallback_message = {
+                        "speaker": character.name,
+                        "content": f"{character.name}として、「{discussion.theme}」について考えています...",
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }
+                    messages.append(fallback_message)
+                    stream_data["messages"] = messages.copy()
+                
+                # Small delay between characters
+                await asyncio.sleep(0.5)
+            
+            return {
+                "discussion_id": discussion.id,
+                "theme": discussion.theme,
+                "world": world.name,
+                "participants": [char.name for char in characters],
+                "messages": messages,
+                "status": "completed",
+                "note": "AI-powered streaming discussion using OpenAI GPT-4o-mini"
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in AI streaming discussion generation: {e}")
+            return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data)
+    
+    async def _create_mock_streaming_discussion_result(self, discussion, characters, world, stream_data):
+        """Create a mock discussion with streaming updates"""
+        
+        messages = [
+            {
+                "speaker": "システム",
+                "content": f"議論テーマ「{discussion.theme}」について話し合いを開始します。",
+                "timestamp": datetime.datetime.now().isoformat()
+            }
+        ]
+        stream_data["messages"] = messages
+        
+        # Generate streaming mock discussion
+        for i, character in enumerate(characters):
+            # Update progress
+            progress = 80 + (15 * (i + 1) / len(characters))  # 80-95%
+            stream_data["progress"] = min(95, int(progress))
+            stream_data["message"] = f"{character.name}が発言中..."
+            
+            # Generate mock responses with delay
+            discussion_points = [
+                f"私は{character.personality}な性格なので、「{discussion.theme}」について{self._generate_mock_opinion(character, discussion.theme)}と思います。",
+                f"{character.background}の経験から言うと、この問題は{self._generate_mock_perspective(character, discussion.theme)}",
+            ]
+            
+            for j, point in enumerate(discussion_points):
+                if i < 2 or j == 0:  # Limit messages for demo
+                    new_message = {
+                        "speaker": character.name,
+                        "content": point,
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }
+                    messages.append(new_message)
+                    stream_data["messages"] = messages.copy()  # Update stream immediately
+                    
+                    # Small delay to simulate real conversation
+                    await asyncio.sleep(1)
+        
+        return {
+            "discussion_id": discussion.id,
+            "theme": discussion.theme,
+            "world": world.name,
+            "participants": [char.name for char in characters],
+            "messages": messages,
+            "status": "completed",
+            "note": "Mock streaming discussion - TinyTroupe not available or API issues"
+        }
+    
     def validate_character_config(self, config: Dict[str, Any]) -> bool:
         """Validate character configuration."""
         required_fields = ["name"]

@@ -114,4 +114,46 @@ export const discussionsApi = {
     api.post(`/discussions/${id}/start`).then((res) => res.data),
   update: (id: number, discussion: Partial<Discussion>): Promise<Discussion> =>
     api.put(`/discussions/${id}`, discussion).then((res) => res.data),
+  streamProgress: (
+    discussionId: number,
+    onProgress: (data: {
+      progress: number;
+      message: string;
+      completed: boolean;
+      error?: string;
+      messages?: Array<{
+        speaker: string;
+        content: string;
+        timestamp: string;
+      }>;
+    }) => void,
+    onError: (error: string) => void
+  ) => {
+    const eventSource = new EventSource(
+      `${API_BASE_URL}/discussions/${discussionId}/stream`
+    );
+
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        onProgress(data);
+        
+        if (data.completed) {
+          eventSource.close();
+        }
+      } catch (error) {
+        console.error("Error parsing SSE data:", error);
+        eventSource.close();
+        onError("データの解析に失敗しました");
+      }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error("SSE connection error:", error);
+      eventSource.close();
+      onError("接続エラーが発生しました");
+    };
+
+    return eventSource;
+  },
 };

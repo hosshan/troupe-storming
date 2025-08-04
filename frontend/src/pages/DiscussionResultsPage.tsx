@@ -79,6 +79,11 @@ const DiscussionResultsPage: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  // discussionRunningの状態変化を追跡
+  useEffect(() => {
+    console.log("discussionRunning state changed:", discussionRunning);
+  }, [discussionRunning]);
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
@@ -123,6 +128,7 @@ const DiscussionResultsPage: React.FC = () => {
         setProgress(100);
         setProgressMessage("議論が完了しました");
         setDiscussionRunning(false);
+        console.log("Set discussionRunning to false for completed discussion"); // デバッグログを追加
       } else if (discussionData.status === "running") {
         console.log("Discussion is running, starting updates");
         // Start listening for real-time updates
@@ -178,6 +184,8 @@ const DiscussionResultsPage: React.FC = () => {
         (data: DiscussionProgress) => {
           if (!isComponentMountedRef.current) return;
 
+          console.log("Received discussion progress:", data); // デバッグログを追加
+
           setProgress(data.progress);
           setProgressMessage(data.message);
 
@@ -186,6 +194,9 @@ const DiscussionResultsPage: React.FC = () => {
           }
 
           if (data.completed) {
+            console.log(
+              "Discussion completed, setting discussionRunning to false"
+            ); // デバッグログを追加
             setDiscussionRunning(false);
 
             if (data.error) {
@@ -248,6 +259,14 @@ const DiscussionResultsPage: React.FC = () => {
         setMessages(discussionData.result.messages);
       } else {
         console.log("No messages in refreshed discussion data");
+      }
+
+      // 議論が完了している場合は、discussionRunningを確実にfalseにする
+      if (discussionData.status === "completed") {
+        console.log(
+          "Discussion status is completed, ensuring discussionRunning is false"
+        );
+        setDiscussionRunning(false);
       }
     } catch (error) {
       console.error("Failed to refresh discussion:", error);

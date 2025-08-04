@@ -174,6 +174,7 @@ async def run_discussion_with_streaming(discussion_id: int, db: Session):
     
     finally:
         stream_data["completed"] = True
+        print(f"Discussion {discussion_id} completed, setting completed=True")  # デバッグログを追加
         # Clean up after a delay to allow final message to be sent
         asyncio.create_task(cleanup_discussion_stream(discussion_id, delay=5))
 
@@ -253,6 +254,7 @@ async def discussion_event_generator(discussion_id: int, request: Request) -> As
         if stream_data["error"]:
             final_data["error"] = stream_data["error"]
         
+        print(f"Sending final update for discussion {discussion_id}:", final_data)  # デバッグログを追加
         yield f"data: {json.dumps(final_data)}\n\n"
         
     finally:

@@ -150,9 +150,11 @@ export const discussionsApi = {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log("Received SSE data:", data); // デバッグログを追加
         onProgress(data);
 
         if (data.completed) {
+          console.log("Discussion completed, closing EventSource"); // デバッグログを追加
           clearTimeout(connectionTimeout);
           eventSource.close();
         }

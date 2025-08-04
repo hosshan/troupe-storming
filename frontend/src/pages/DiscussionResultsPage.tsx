@@ -79,6 +79,14 @@ const DiscussionResultsPage: React.FC = () => {
     scrollToBottom();
   }, [messages]);
 
+  // メッセージの状態変化を追跡
+  useEffect(() => {
+    console.log("Messages state changed:", messages.length, "messages");
+    if (messages.length > 0) {
+      console.log("Latest message:", messages[messages.length - 1]);
+    }
+  }, [messages]);
+
   // discussionRunningの状態変化を追跡
   useEffect(() => {
     console.log("discussionRunning state changed:", discussionRunning);
@@ -134,11 +142,26 @@ const DiscussionResultsPage: React.FC = () => {
         // Start listening for real-time updates
         startListeningForUpdates();
       } else if (discussionData.status === "pending") {
-        console.log("Discussion is pending, starting discussion");
-        // Start the discussion
-        startDiscussion();
+        console.log("Discussion is pending, ready to start");
+        setDiscussionRunning(false);
+        setProgress(0);
+        setProgressMessage("議論を開始する準備ができています");
+        // ユーザーが手動で開始ボタンを押すまで待機
+      } else if (discussionData.status === "failed") {
+        console.log("Discussion failed, showing error and retry option");
+        setDiscussionRunning(false);
+        setProgress(0);
+        setProgressMessage("議論が失敗しました。再実行できます。");
+        // エラーメッセージを設定（resultにエラー情報がある場合）
+        if (discussionData.result && discussionData.result.error) {
+          setError(`議論が失敗しました: ${discussionData.result.error}`);
+        } else {
+          setError("議論が失敗しました");
+        }
       } else {
         console.log("Unknown discussion status:", discussionData.status);
+        setDiscussionRunning(false);
+        setError(`不明な議論ステータス: ${discussionData.status}`);
       }
     } catch (error) {
       console.error("Failed to load data:", error);
@@ -155,17 +178,85 @@ const DiscussionResultsPage: React.FC = () => {
 
   const startDiscussion = async () => {
     try {
-      setDiscussionRunning(true);
-      setProgressMessage("議論を開始しています...");
-      setProgress(0);
-      setMessages([]);
+      // 議論の現在の状態を再確認
+      const currentDiscussion = await discussionsApi.getById(
+        parseInt(discussionId!)
+      );
 
-      await discussionsApi.start(parseInt(discussionId!));
-      startListeningForUpdates();
-    } catch (error) {
+      // 既に開始されている場合は、ストリーミングを開始するだけ
+      if (currentDiscussion.status === "running") {
+        console.log(
+          "Discussion is already running, starting streaming updates"
+        );
+        setDiscussionRunning(true);
+        setProgressMessage("議論を実行中です...");
+        startListeningForUpdates();
+        return;
+      }
+
+      // 既に完了している場合は、新しい議論を作成する必要がある
+      if (currentDiscussion.status === "completed") {
+        console.log(
+          "Discussion is completed, cannot restart existing discussion"
+        );
+        setError(
+          "既に完了した議論は再開始できません。新しい議論を作成してください。"
+        );
+        return;
+      }
+
+      // pending状態の場合のみstartを呼び出す
+      if (currentDiscussion.status === "pending") {
+        setDiscussionRunning(true);
+        setProgressMessage("議論を開始しています...");
+        setProgress(0);
+        setMessages([]);
+
+        const response = await discussionsApi.start(parseInt(discussionId!));
+        console.log("Start discussion response:", response);
+
+        // レスポンスのステータスをチェック
+        if (response?.status === "completed") {
+          console.log("Discussion already completed, refreshing data...");
+          setDiscussionRunning(false);
+          setProgress(100);
+          setProgressMessage("議論は既に完了しています");
+          refreshDiscussion();
+        } else if (response?.status === "running") {
+          console.log("Discussion already running, starting updates...");
+          startListeningForUpdates();
+        } else {
+          console.log("Discussion started successfully, starting updates...");
+          startListeningForUpdates();
+        }
+      } else {
+        console.log("Unexpected discussion status:", currentDiscussion.status);
+        setError(`予期しない議論状態です: ${currentDiscussion.status}`);
+      }
+    } catch (error: any) {
       console.error("Failed to start discussion:", error);
+
+      // 400エラーの場合は、既に開始されている可能性がある
+      if (error.response?.status === 400) {
+        const errorMessage = error.response.data?.detail || error.message;
+        if (
+          errorMessage.includes("already started") ||
+          errorMessage.includes("already completed")
+        ) {
+          console.log(
+            "Discussion already started/completed, starting streaming updates"
+          );
+          setDiscussionRunning(true);
+          setProgressMessage("議論を実行中です...");
+          startListeningForUpdates();
+          return;
+        }
+      }
+
       if (isComponentMountedRef.current) {
-        setError("議論の開始に失敗しました");
+        setError(
+          "議論の開始に失敗しました: " + (error.message || "不明なエラー")
+        );
         setDiscussionRunning(false);
       }
     }
@@ -190,18 +281,33 @@ const DiscussionResultsPage: React.FC = () => {
           setProgressMessage(data.message);
 
           if (data.messages) {
-            setMessages(data.messages);
+            console.log("Updating messages:", data.messages.length, "messages"); // デバッグログを追加
+            console.log("Current messages count:", messages.length); // デバッグログを追加
+
+            // 新しいメッセージが既存のメッセージより多い場合のみ更新
+            if (data.messages.length > messages.length) {
+              console.log("New messages detected, updating..."); // デバッグログを追加
+              setMessages(data.messages);
+            } else if (data.messages.length > 0 && messages.length === 0) {
+              // 初回のメッセージの場合
+              console.log("Initial messages received, setting..."); // デバッグログを追加
+              setMessages(data.messages);
+            }
           }
 
           if (data.completed) {
             console.log(
               "Discussion completed, setting discussionRunning to false"
             ); // デバッグログを追加
+            console.log("Final progress:", data.progress); // デバッグログを追加
+            console.log("Final message:", data.message); // デバッグログを追加
             setDiscussionRunning(false);
 
             if (data.error) {
+              console.error("Discussion completed with error:", data.error); // デバッグログを追加
               setError(data.error);
             } else {
+              console.log("Discussion completed successfully"); // デバッグログを追加
               setProgressMessage("議論が完了しました");
               // Refresh discussion data to get final results
               refreshDiscussion();
@@ -390,6 +496,28 @@ const DiscussionResultsPage: React.FC = () => {
             <Typography variant="body2" color="text.secondary">
               参加キャラクター: {characters.map((c) => c.name).join(", ")}
             </Typography>
+
+            {discussion.status === "pending" && (
+              <Button
+                variant="contained"
+                onClick={startDiscussion}
+                sx={{ mt: 2 }}
+                disabled={loading}
+              >
+                {loading ? "議論開始中..." : "議論を開始"}
+              </Button>
+            )}
+
+            {discussion.status === "failed" && (
+              <Button
+                variant="contained"
+                onClick={startDiscussion}
+                sx={{ mt: 2 }}
+                disabled={loading}
+              >
+                {loading ? "再実行中..." : "再実行"}
+              </Button>
+            )}
           </CardContent>
         </Card>
       )}
@@ -423,16 +551,6 @@ const DiscussionResultsPage: React.FC = () => {
         <Typography variant="h6" gutterBottom>
           議論の流れ
         </Typography>
-
-        {(() => {
-          console.log(
-            "Rendering messages, count:",
-            messages.length,
-            "messages:",
-            messages
-          );
-          return null;
-        })()}
 
         {messages.length === 0 && !discussionRunning && (
           <Typography color="text.secondary" textAlign="center" py={4}>

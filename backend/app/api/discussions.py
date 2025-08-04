@@ -5,9 +5,13 @@ from typing import List, AsyncGenerator
 import asyncio
 import json
 import time
+import logging
 from app.database.config import get_db
 from app.models import models, schemas
 from app.services.tinytroupe_service import TinyTroupeService
+
+# Configure logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/discussions", tags=["discussions"])
 
@@ -70,13 +74,24 @@ async def start_discussion(discussion_id: int, background_tasks: BackgroundTasks
     if not discussion:
         raise HTTPException(status_code=404, detail="Discussion not found")
     
-    if discussion.status != "pending":
-        raise HTTPException(status_code=400, detail="Discussion already started or completed")
+    # 議論のステータスをチェック
+    if discussion.status == "completed":
+        # 完了した議論の場合は、結果を返す
+        return {"message": "Discussion already completed", "discussion_id": discussion_id, "status": "completed"}
+    elif discussion.status == "failed":
+        # 失敗した議論の場合は、再実行を許可
+        discussion.status = "pending"
+        db.commit()
+    elif discussion.status == "running":
+        # 実行中の議論の場合は、進行状況を返す
+        return {"message": "Discussion already running", "discussion_id": discussion_id, "status": "running"}
     
+    # 議論を開始
     discussion.status = "running"
     db.commit()
     
-    background_tasks.add_task(run_discussion_background, discussion_id, db)
+    # ストリーミング機能を使用して議論を開始
+    background_tasks.add_task(run_discussion_with_streaming, discussion_id, db)
     
     return {"message": "Discussion started", "discussion_id": discussion_id}
 
@@ -119,6 +134,7 @@ async def run_discussion_with_streaming(discussion_id: int, db: Session):
         if not characters:
             stream_data["error"] = "No characters found in this world"
             stream_data["completed"] = True
+            discussion_streams[discussion_id] = stream_data  # 明示的に再代入
             discussion.status = "failed"
             discussion.result = {"error": "No characters found in this world"}
             db.commit()
@@ -127,26 +143,30 @@ async def run_discussion_with_streaming(discussion_id: int, db: Session):
         # Update progress: Starting
         stream_data["progress"] = 10
         stream_data["message"] = "TinyTroupeサービスを初期化中..."
+        discussion_streams[discussion_id] = stream_data  # 明示的に再代入
         await asyncio.sleep(0.5)
         
         # Update progress: Creating agents
         stream_data["progress"] = 30
         stream_data["message"] = f"{len(characters)}人のキャラクターをAIエージェントに変換中..."
+        discussion_streams[discussion_id] = stream_data  # 明示的に再代入
         await asyncio.sleep(1)
         
         # Update progress: Setting up world
         stream_data["progress"] = 50
         stream_data["message"] = f"議論環境「{world.name}」を準備中..."
+        discussion_streams[discussion_id] = stream_data  # 明示的に再代入
         await asyncio.sleep(0.5)
         
         # Update progress: Starting discussion
         stream_data["progress"] = 70
         stream_data["message"] = f"議論「{discussion.theme}」を開始..."
+        discussion_streams[discussion_id] = stream_data  # 明示的に再代入
         await asyncio.sleep(0.5)
         
         # Run the actual discussion with streaming updates
         result = await tinytroupe_service.run_discussion_with_streaming(
-            discussion, characters, world, stream_data
+            discussion, characters, world, stream_data, discussion_id
         )
         
         # Update with final results
@@ -154,11 +174,13 @@ async def run_discussion_with_streaming(discussion_id: int, db: Session):
             stream_data["messages"] = result.get("messages", [])
             stream_data["progress"] = 100
             stream_data["message"] = "議論が完了しました"
+            discussion_streams[discussion_id] = stream_data  # 明示的に再代入
             discussion.status = "completed"
         else:
             stream_data["error"] = result.get("error", "Unknown error")
             stream_data["progress"] = 100
             stream_data["message"] = "議論でエラーが発生しました"
+            discussion_streams[discussion_id] = stream_data  # 明示的に再代入
             discussion.status = "failed"
         
         discussion.result = result
@@ -168,13 +190,15 @@ async def run_discussion_with_streaming(discussion_id: int, db: Session):
         stream_data["error"] = str(e)
         stream_data["progress"] = 100
         stream_data["message"] = f"エラーが発生しました: {str(e)}"
+        discussion_streams[discussion_id] = stream_data  # 明示的に再代入
         discussion.status = "failed"
         discussion.result = {"error": str(e)}
         db.commit()
     
     finally:
         stream_data["completed"] = True
-        print(f"Discussion {discussion_id} completed, setting completed=True")  # デバッグログを追加
+        discussion_streams[discussion_id] = stream_data  # 明示的に再代入
+        logger.debug(f"Discussion {discussion_id} completed, setting completed=True")  # デバッグログを追加
         # Clean up after a delay to allow final message to be sent
         asyncio.create_task(cleanup_discussion_stream(discussion_id, delay=5))
 
@@ -200,7 +224,7 @@ async def discussion_event_generator(discussion_id: int, request: Request) -> As
             # Check if client disconnected
             if await request.is_disconnected():
                 return
-            await asyncio.sleep(1)
+            await asyncio.sleep(0.5)  # より頻繁にチェック
             wait_count += 1
         
         if discussion_id not in discussion_streams:
@@ -210,6 +234,7 @@ async def discussion_event_generator(discussion_id: int, request: Request) -> As
         stream_data = discussion_streams[discussion_id]
         last_message_count = 0
         last_progress = -1
+        last_message_hash = None  # メッセージの内容もチェック
         max_duration = 300  # 5 minutes max duration
         
         while not stream_data["completed"]:
@@ -233,15 +258,21 @@ async def discussion_event_generator(discussion_id: int, request: Request) -> As
             if stream_data["error"]:
                 current_data["error"] = stream_data["error"]
             
-            # Only send update if there's new data
+            # メッセージの内容も含めて変更をチェック
+            current_message_hash = hash(str(stream_data["messages"]))
+            
+            # Only send update if there's new data (より敏感に変更を検知)
             if (len(stream_data["messages"]) != last_message_count or 
-                stream_data["progress"] != last_progress):
+                stream_data["progress"] != last_progress or
+                current_message_hash != last_message_hash):
                 
+                logger.debug(f"Discussion {discussion_id}: Sending update - Messages: {len(stream_data['messages'])}, Progress: {stream_data['progress']}")  # デバッグログを追加
                 yield f"data: {json.dumps(current_data)}\n\n"
                 last_message_count = len(stream_data["messages"])
                 last_progress = stream_data["progress"]
+                last_message_hash = current_message_hash
             
-            await asyncio.sleep(1)  # Check every second
+            await asyncio.sleep(0.2)  # より頻繁にチェック（200ms間隔）
         
         # Send final update
         final_data = {
@@ -254,8 +285,13 @@ async def discussion_event_generator(discussion_id: int, request: Request) -> As
         if stream_data["error"]:
             final_data["error"] = stream_data["error"]
         
-        print(f"Sending final update for discussion {discussion_id}:", final_data)  # デバッグログを追加
+        logger.debug(f"Sending final update for discussion {discussion_id}:", final_data)  # デバッグログを追加
+        logger.info(f"Discussion {discussion_id} stream completed, sending final update")  # 完了ログを追加
         yield f"data: {json.dumps(final_data)}\n\n"
+        
+        # 完了メッセージを確実に送信するために少し待機
+        await asyncio.sleep(0.5)
+        logger.info(f"Discussion {discussion_id} stream cleanup completed")  # クリーンアップ完了ログを追加
         
     finally:
         # Clean up connection tracking

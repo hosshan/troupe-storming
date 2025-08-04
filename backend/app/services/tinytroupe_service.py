@@ -251,7 +251,7 @@ class TinyTroupeService:
             
             return None, []
     
-    async def run_discussion(self, discussion: Discussion, characters: List[Character], world: World, stream_data=None) -> Dict[str, Any]:
+    async def run_discussion(self, discussion: Discussion, characters: List[Character], world: World, stream_data=None, discussion_id=None) -> Dict[str, Any]:
         """Run a discussion simulation using TinyTroupe or fallback methods with optional streaming support."""
         logger.info(f"=== STARTING DISCUSSION: {discussion.theme} ===")
         logger.info(f"TinyTroupe available: {self.tinytroupe_available}")
@@ -269,21 +269,21 @@ class TinyTroupeService:
                     if provider == 'tinytroupe' and self.tinytroupe_available and self.api_key:
                         logger.info("🚀 USING TINYTROUPE for discussion generation")
                         result = await self._create_discussion_result(
-                            'tinytroupe', discussion, characters, world, stream_data
+                            'tinytroupe', discussion, characters, world, stream_data, discussion_id
                         )
                         logger.info("✅ TinyTroupe discussion completed successfully")
                         return result
                     elif provider == 'openai' and self.openai_available and self.api_key:
                         logger.warning("⚠️ FALLING BACK to OpenAI direct API")
                         result = await self._create_discussion_result(
-                            'openai', discussion, characters, world, stream_data
+                            'openai', discussion, characters, world, stream_data, discussion_id
                         )
                         logger.info("✅ OpenAI direct discussion completed")
                         return result
                     elif provider == 'mock':
                         logger.warning("⚠️ FALLING BACK to mock data (no AI available)")
                         result = await self._create_discussion_result(
-                            'mock', discussion, characters, world, stream_data
+                            'mock', discussion, characters, world, stream_data, discussion_id
                         )
                         logger.info("✅ Mock discussion completed")
                         return result
@@ -303,7 +303,7 @@ class TinyTroupeService:
                 "status": "failed"
             }
     
-    async def _create_discussion_result(self, provider: str, discussion, characters, world, stream_data=None):
+    async def _create_discussion_result(self, provider: str, discussion, characters, world, stream_data=None, discussion_id=None):
         """統合された議論生成メソッド（ストリーミング対応）"""
         # 共通処理
         messages = [self._create_system_message(discussion)]
@@ -313,7 +313,7 @@ class TinyTroupeService:
         if provider == 'tinytroupe':
             if stream_data:
                 return await self._create_tinytroupe_streaming_discussion_result(
-                    discussion, characters, world, stream_data
+                    discussion, characters, world, stream_data, discussion_id
                 )
             else:
                 return await self._create_tinytroupe_discussion_result(
@@ -322,7 +322,7 @@ class TinyTroupeService:
         elif provider == 'openai':
             if stream_data:
                 return await self._create_ai_streaming_discussion_result(
-                    discussion, characters, world, stream_data
+                    discussion, characters, world, stream_data, discussion_id
                 )
             else:
                 return await self._create_ai_discussion_result(
@@ -331,7 +331,7 @@ class TinyTroupeService:
         else:  # mock
             if stream_data:
                 return await self._create_mock_streaming_discussion_result(
-                    discussion, characters, world, stream_data
+                    discussion, characters, world, stream_data, discussion_id
                 )
             else:
                 return self._create_mock_discussion_result(
@@ -834,11 +834,11 @@ class TinyTroupeService:
         
         return messages
     
-    async def run_discussion_with_streaming(self, discussion, characters, world, stream_data):
+    async def run_discussion_with_streaming(self, discussion, characters, world, stream_data, discussion_id=None):
         """Run discussion with real-time streaming updates to stream_data (legacy method - calls unified run_discussion)"""
-        return await self.run_discussion(discussion, characters, world, stream_data)
+        return await self.run_discussion(discussion, characters, world, stream_data, discussion_id)
     
-    async def _create_tinytroupe_streaming_discussion_result(self, discussion, characters, world, stream_data):
+    async def _create_tinytroupe_streaming_discussion_result(self, discussion, characters, world, stream_data, discussion_id=None):
         """Create a discussion using TinyTroupe with real-time streaming"""
         logger.info("🔧 Starting TinyTroupe streaming discussion creation...")
         
@@ -853,6 +853,10 @@ class TinyTroupeService:
             # Update progress
             stream_data["progress"] = 10
             stream_data["message"] = "TinyTroupe環境を初期化中..."
+            if discussion_id:
+                from app.api.discussions import discussion_streams
+                discussion_streams[discussion_id] = stream_data
+
             
             # Create TinyWorld and agents with streaming updates
             tiny_world, agents = await self.setup_world_agents(world, characters, stream_data)
@@ -860,7 +864,7 @@ class TinyTroupeService:
             if not tiny_world or not agents:
                 logger.error("❌ TinyWorld or agents creation failed")
                 # Fall back to AI discussion
-                return await self._create_ai_streaming_discussion_result(discussion, characters, world, stream_data)
+                return await self._create_ai_streaming_discussion_result(discussion, characters, world, stream_data, discussion_id)
             
             logger.info(f"✅ Successfully created TinyWorld with {len(agents)} agents")
             
@@ -873,6 +877,9 @@ class TinyTroupeService:
                 }
             ]
             stream_data["messages"] = messages
+            if discussion_id:
+                from app.api.discussions import discussion_streams
+                discussion_streams[discussion_id] = stream_data
             
             # Set up the discussion topic
             discussion_prompt = f"""
@@ -894,6 +901,9 @@ class TinyTroupeService:
             # Update progress
             stream_data["progress"] = 75
             stream_data["message"] = f"{len(agents)}人のエージェントが議論を開始..."
+            if discussion_id:
+                from app.api.discussions import discussion_streams
+                discussion_streams[discussion_id] = stream_data
             
             # Have each agent respond one by one with real-time updates
             logger.info("💭 Starting agent discussions with streaming...")
@@ -907,24 +917,45 @@ class TinyTroupeService:
                     
                     # Stream: Agent thinking
                     stream_data["message"] = f"🧠 {agent.name}が議論テーマについて考えています..."
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
                     await asyncio.sleep(0.5)
                     
                     # Make the agent think about the topic
                     logger.info(f"🧠 Making {agent.name} think about the topic...")
+                    stream_data["message"] = f"🧠 {agent.name}が議論テーマについて考えています..."
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
                     try:
                         think_result = agent.think(discussion_prompt)
                         logger.info(f"💡 {agent.name} thinking completed")
+                        stream_data["message"] = f"💡 {agent.name}の思考が完了しました"
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
                     except Exception as think_error:
                         logger.warning(f"⚠️ Thinking failed for {agent.name}: {think_error}")
+                        stream_data["message"] = f"⚠️ {agent.name}の思考処理でエラーが発生しました"
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
                         # Continue without thinking step
                     
                     # Stream: Agent preparing response
                     stream_data["message"] = f"💭 {agent.name}が意見をまとめています..."
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
                     await asyncio.sleep(0.5)
                     
                     # Get the agent's response
                     logger.info(f"🗣️ Getting response from {agent.name}...")
                     stream_data["message"] = f"🗣️ {agent.name}が発言中... (AI処理中)"
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
                     
                     agent.listen_and_act(f"「{discussion.theme}」について、簡潔に意見を述べてください。")
                     response = agent.pop_actions_and_get_contents_for("TALK", False)
@@ -938,6 +969,10 @@ class TinyTroupeService:
                     else:
                         # Try to get content from agent's recent actions or memory
                         logger.info(f"🔍 Trying to extract content from {agent.name}'s memory or actions...")
+                        stream_data["message"] = f"🔍 {agent.name}の記憶や行動から内容を抽出中..."
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
                         try:
                             # First, try to get from the world's communication buffer (most recent)
                             if hasattr(tiny_world, 'communication_buffer'):
@@ -952,6 +987,10 @@ class TinyTroupeService:
                                                 if comm_content and len(comm_content.strip()) > 10:
                                                     content = comm_content
                                                     logger.info(f"💬 Found recent communication from {agent.name}: {content[:50]}...")
+                                                    stream_data["message"] = f"💬 {agent.name}の最近の通信から内容を発見しました"
+                                                    if discussion_id:
+                                                        from app.api.discussions import discussion_streams
+                                                        discussion_streams[discussion_id] = stream_data
                                                     break
                             
                             # If no communication found, check agent's episodic memory
@@ -963,6 +1002,10 @@ class TinyTroupeService:
                                         if hasattr(memory, 'content') and memory.content and len(str(memory.content)) > 10:
                                             content = str(memory.content)
                                             logger.info(f"📚 Found content from {agent.name}'s memory: {content[:50]}...")
+                                            stream_data["message"] = f"📚 {agent.name}の記憶から内容を発見しました"
+                                            if discussion_id:
+                                                from app.api.discussions import discussion_streams
+                                                discussion_streams[discussion_id] = stream_data
                                             break
                             
                             # If no memory content, try to get from agent's current state
@@ -971,6 +1014,10 @@ class TinyTroupeService:
                                 if current_action and str(current_action) != "None":
                                     content = str(current_action)
                                     logger.info(f"🎭 Found content from {agent.name}'s current action: {content[:50]}...")
+                                    stream_data["message"] = f"🎭 {agent.name}の現在の行動から内容を発見しました"
+                                    if discussion_id:
+                                        from app.api.discussions import discussion_streams
+                                        discussion_streams[discussion_id] = stream_data
                             
                             # If still no content, try to get from agent's last communication
                             if not content and hasattr(agent, 'last_communication'):
@@ -978,13 +1025,24 @@ class TinyTroupeService:
                                 if last_comm and str(last_comm) != "None":
                                     content = str(last_comm)
                                     logger.info(f"💬 Found content from {agent.name}'s last communication: {content[:50]}...")
+                                    stream_data["message"] = f"💬 {agent.name}の最後の通信から内容を発見しました"
+                                    if discussion_id:
+                                        from app.api.discussions import discussion_streams
+                                        discussion_streams[discussion_id] = stream_data
                                     
                         except Exception as extract_error:
                             logger.warning(f"⚠️ Error extracting content from {agent.name}: {extract_error}")
+                            stream_data["message"] = f"⚠️ {agent.name}からの内容抽出でエラーが発生しました"
+                            if discussion_id:
+                                from app.api.discussions import discussion_streams
+                                discussion_streams[discussion_id] = stream_data
                     
                     if content and len(content.strip()) > 5:
                         # Stream: Agent completed response
                         stream_data["message"] = f"✅ {agent.name}が発言を完了しました"
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
                         await asyncio.sleep(0.2)
                         
                         # Add message immediately to stream
@@ -995,17 +1053,34 @@ class TinyTroupeService:
                         }
                         messages.append(new_message)
                         stream_data["messages"] = messages.copy()  # Update stream immediately
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
+                        
+                        # Force a small delay to ensure the update is sent
+                        await asyncio.sleep(0.1)
                         
                         # Show the actual content in progress message
                         stream_data["message"] = f"💬 {agent.name}: {content[:50]}..." if len(content) > 50 else f"💬 {agent.name}: {content}"
-                        await asyncio.sleep(1)
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
+                        await asyncio.sleep(0.5)  # 短縮
                         
                         logger.info(f"✅ Added streaming message from {agent.name}")
+                        logger.debug(f"Stream updated: {len(stream_data['messages'])} messages total")  # デバッグログを追加
                     else:
                         logger.warning(f"⚠️ No response from {agent.name}, adding fallback message")
+                        stream_data["message"] = f"⚠️ {agent.name}からの応答を取得できませんでした"
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
                         
                         # Stream: Agent had no response
                         stream_data["message"] = f"⚠️ {agent.name}からの応答を取得できませんでした"
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
                         await asyncio.sleep(0.3)
                         
                         # Add a fallback response
@@ -1016,16 +1091,30 @@ class TinyTroupeService:
                         }
                         messages.append(fallback_message)
                         stream_data["messages"] = messages.copy()
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
+                        
+                        # Force a small delay to ensure the update is sent
+                        await asyncio.sleep(0.1)
                     
                     # Small delay between agents
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.5)  # 短縮
                     
                 except Exception as agent_error:
                     logger.error(f"❌ Error getting response from agent {agent.name}: {agent_error}")
+                    stream_data["message"] = f"❌ {agent.name}からの応答取得でエラーが発生しました"
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
                     # Check if it's a token limit error
                     error_str = str(agent_error).lower()
                     if "length" in error_str or "token" in error_str:
                         logger.warning(f"OpenAI API token limit exceeded for {agent.name}, using fallback response")
+                        stream_data["message"] = f"⚠️ {agent.name}: トークン制限により詳細な応答ができません"
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
                         fallback_message = {
                             "speaker": agent.name,
                             "content": f"{agent.name}として、「{discussion.theme}」について考えています...（トークン制限により詳細な応答ができません）",
@@ -1033,6 +1122,10 @@ class TinyTroupeService:
                         }
                     else:
                         # Add a fallback response for this agent
+                        stream_data["message"] = f"⚠️ {agent.name}: エラーが発生しました"
+                        if discussion_id:
+                            from app.api.discussions import discussion_streams
+                            discussion_streams[discussion_id] = stream_data
                         fallback_message = {
                             "speaker": agent.name,
                             "content": f"{agent.name}として、「{discussion.theme}」について考えています...（エラーが発生しました）",
@@ -1040,6 +1133,18 @@ class TinyTroupeService:
                         }
                     messages.append(fallback_message)
                     stream_data["messages"] = messages.copy()
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
+            
+            # 完了状態を設定
+            stream_data["completed"] = True
+            stream_data["progress"] = 100
+            stream_data["message"] = "TinyTroupe議論が完了しました"
+            if discussion_id:
+                from app.api.discussions import discussion_streams
+                discussion_streams[discussion_id] = stream_data
+            logger.info("✅ TinyTroupe streaming discussion completed")
             
             return self._create_discussion_response(
                 discussion, world, characters, messages,
@@ -1051,21 +1156,24 @@ class TinyTroupeService:
             error_str = str(e).lower()
             if "insufficient_quota" in error_str or "quota" in error_str:
                 logger.warning("OpenAI API quota exceeded in streaming TinyTroupe, falling back to mock discussion")
-                return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data)
+                return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data, discussion_id)
             elif "rate_limit" in error_str or "429" in error_str:
                 logger.warning("OpenAI API rate limit exceeded in streaming TinyTroupe, falling back to mock discussion")
-                return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data)
+                return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data, discussion_id)
             else:
                 # Fall back to AI discussion
-                return await self._create_ai_streaming_discussion_result(discussion, characters, world, stream_data)
+                return await self._create_ai_streaming_discussion_result(discussion, characters, world, stream_data, discussion_id)
     
-    async def _create_ai_streaming_discussion_result(self, discussion, characters, world, stream_data):
+    async def _create_ai_streaming_discussion_result(self, discussion, characters, world, stream_data, discussion_id=None):
         """Create an AI-powered discussion with streaming updates"""
         try:
             client = openai.OpenAI(api_key=self.api_key)
             
             messages = [self._create_system_message(discussion)]
             stream_data["messages"] = messages
+            if discussion_id:
+                from app.api.discussions import discussion_streams
+                discussion_streams[discussion_id] = stream_data
             
             # Generate discussion for each character with streaming
             for i, character in enumerate(characters):
@@ -1073,6 +1181,9 @@ class TinyTroupeService:
                 progress = 80 + (15 * (i + 1) / len(characters))  # 80-95%
                 stream_data["progress"] = min(95, int(progress))
                 stream_data["message"] = f"{character.name}が発言中..."
+                if discussion_id:
+                    from app.api.discussions import discussion_streams
+                    discussion_streams[discussion_id] = stream_data
                 
                 prompt = f"""
                 あなたは{character.name}として振る舞ってください。
@@ -1093,6 +1204,10 @@ class TinyTroupeService:
                 """
                 
                 try:
+                    stream_data["message"] = f"🤖 {character.name}のAI応答を生成中..."
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
                     response = client.chat.completions.create(
                         model="gpt-4o-mini",
                         messages=[
@@ -1104,6 +1219,10 @@ class TinyTroupeService:
                     )
                     
                     ai_response = response.choices[0].message.content.strip()
+                    stream_data["message"] = f"✅ {character.name}のAI応答が完了しました"
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
                     
                     new_message = {
                         "speaker": character.name,
@@ -1112,9 +1231,21 @@ class TinyTroupeService:
                     }
                     messages.append(new_message)
                     stream_data["messages"] = messages.copy()  # Update stream immediately
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
+                    
+                    # Force a small delay to ensure the update is sent
+                    await asyncio.sleep(0.1)
+                    
+                    logger.debug(f"AI Stream updated: {len(stream_data['messages'])} messages total")  # デバッグログを追加
                     
                 except Exception as api_error:
                     logger.error(f"OpenAI API error for {character.name}: {api_error}")
+                    stream_data["message"] = f"❌ {character.name}のAI応答生成でエラーが発生しました"
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
                     # Add a fallback response for this character
                     fallback_message = {
                         "speaker": character.name,
@@ -1123,9 +1254,24 @@ class TinyTroupeService:
                     }
                     messages.append(fallback_message)
                     stream_data["messages"] = messages.copy()
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
+                    
+                    # Force a small delay to ensure the update is sent
+                    await asyncio.sleep(0.1)
                 
                 # Small delay between characters
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.3)  # 短縮
+            
+            # 完了状態を設定
+            stream_data["completed"] = True
+            stream_data["progress"] = 100
+            stream_data["message"] = "AI議論が完了しました"
+            if discussion_id:
+                from app.api.discussions import discussion_streams
+                discussion_streams[discussion_id] = stream_data
+            logger.info("✅ AI streaming discussion completed")
             
             return self._create_discussion_response(
                 discussion, world, characters, messages,
@@ -1134,13 +1280,16 @@ class TinyTroupeService:
             
         except Exception as e:
             logger.error(f"Error in AI streaming discussion generation: {e}")
-            return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data)
+            return await self._create_mock_streaming_discussion_result(discussion, characters, world, stream_data, discussion_id)
     
-    async def _create_mock_streaming_discussion_result(self, discussion, characters, world, stream_data):
+    async def _create_mock_streaming_discussion_result(self, discussion, characters, world, stream_data, discussion_id=None):
         """Create a mock discussion with streaming updates"""
         
         messages = [self._create_system_message(discussion)]
         stream_data["messages"] = messages
+        if discussion_id:
+            from app.api.discussions import discussion_streams
+            discussion_streams[discussion_id] = stream_data
         
         # Generate streaming mock discussion
         for i, character in enumerate(characters):
@@ -1148,6 +1297,9 @@ class TinyTroupeService:
             progress = 80 + (15 * (i + 1) / len(characters))  # 80-95%
             stream_data["progress"] = min(95, int(progress))
             stream_data["message"] = f"{character.name}が発言中..."
+            if discussion_id:
+                from app.api.discussions import discussion_streams
+                discussion_streams[discussion_id] = stream_data
             
             # Generate mock responses with delay
             discussion_points = [
@@ -1157,6 +1309,11 @@ class TinyTroupeService:
             
             for j, point in enumerate(discussion_points):
                 if i < 2 or j == 0:  # Limit messages for demo
+                    stream_data["message"] = f"🎭 {character.name}のモック応答を生成中... ({j+1}/{len(discussion_points)})"
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
+                    
                     new_message = {
                         "speaker": character.name,
                         "content": point,
@@ -1164,9 +1321,26 @@ class TinyTroupeService:
                     }
                     messages.append(new_message)
                     stream_data["messages"] = messages.copy()  # Update stream immediately
+                    if discussion_id:
+                        from app.api.discussions import discussion_streams
+                        discussion_streams[discussion_id] = stream_data
+                    
+                    # Force a small delay to ensure the update is sent
+                    await asyncio.sleep(0.1)
+                    
+                    logger.debug(f"Mock Stream updated: {len(stream_data['messages'])} messages total")  # デバッグログを追加
                     
                     # Small delay to simulate real conversation
-                    await asyncio.sleep(1)
+                    await asyncio.sleep(0.5)  # 短縮
+        
+        # 完了状態を設定
+        stream_data["completed"] = True
+        stream_data["progress"] = 100
+        stream_data["message"] = "モック議論が完了しました"
+        if discussion_id:
+            from app.api.discussions import discussion_streams
+            discussion_streams[discussion_id] = stream_data
+        logger.info("✅ Mock streaming discussion completed")
         
         return self._create_discussion_response(
             discussion, world, characters, messages,

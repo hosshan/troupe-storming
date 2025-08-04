@@ -63,7 +63,9 @@ export const discussionsApi = {
     api.get(`/discussions/${id}`).then((res) => res.data),
   create: (discussion: CreateDiscussionRequest): Promise<Discussion> =>
     api.post("/discussions", discussion).then((res) => res.data),
-  start: (id: number): Promise<{ message: string; discussion_id: number }> =>
+  start: (
+    id: number
+  ): Promise<{ message: string; discussion_id: number; status?: string }> =>
     api.post(`/discussions/${id}/start`).then((res) => res.data),
   update: (id: number, discussion: Partial<Discussion>): Promise<Discussion> =>
     api.put(`/discussions/${id}`, discussion).then((res) => res.data),
@@ -95,9 +97,47 @@ export const discussionsApi = {
       onError("接続タイムアウトが発生しました");
     }, 30000); // 30 seconds timeout
 
+    // Set up reconnection logic
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 3;
+    const reconnectDelay = 2000; // 2 seconds
+
+    const attemptReconnect = () => {
+      if (reconnectAttempts < maxReconnectAttempts) {
+        reconnectAttempts++;
+        console.log(
+          `Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`
+        );
+
+        setTimeout(() => {
+          if (
+            !eventSource.readyState ||
+            eventSource.readyState === EventSource.CLOSED
+          ) {
+            const newEventSource = new EventSource(
+              `${API_BASE_URL}/discussions/${discussionId}/stream`
+            );
+
+            // Copy event handlers to new connection
+            newEventSource.onopen = eventSource.onopen;
+            newEventSource.onmessage = eventSource.onmessage;
+            newEventSource.onerror = eventSource.onerror;
+
+            // Replace the old connection
+            eventSource.close();
+            Object.assign(eventSource, newEventSource);
+          }
+        }, reconnectDelay);
+      } else {
+        console.error("Max reconnection attempts reached");
+        onError("接続の再試行回数が上限に達しました");
+      }
+    };
+
     eventSource.onopen = () => {
       console.log("EventSource connection opened");
       clearTimeout(connectionTimeout);
+      reconnectAttempts = 0; // Reset reconnect attempts on successful connection
     };
 
     eventSource.onmessage = (event) => {
@@ -113,17 +153,19 @@ export const discussionsApi = {
         }
       } catch (error) {
         console.error("Error parsing SSE data:", error);
-        clearTimeout(connectionTimeout);
-        eventSource.close();
-        onError("データの解析に失敗しました");
+        // Don't close connection on parsing error, just log it
+        console.warn("Failed to parse SSE data, continuing...");
       }
     };
 
     eventSource.onerror = (error) => {
       console.error("SSE connection error:", error);
-      clearTimeout(connectionTimeout);
-      eventSource.close();
-      onError("接続エラーが発生しました");
+
+      // Only attempt reconnect if connection is actually closed
+      if (eventSource.readyState === EventSource.CLOSED) {
+        clearTimeout(connectionTimeout);
+        attemptReconnect();
+      }
     };
 
     return eventSource;

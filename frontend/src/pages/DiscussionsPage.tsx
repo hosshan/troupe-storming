@@ -1,23 +1,18 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  CardActions,
-  Grid,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Fab,
-  Breadcrumbs,
-  Link,
-  Chip,
-} from '@mui/material';
-import { Add as AddIcon, PlayArrow as PlayIcon, ArrowBack as ArrowBackIcon, Refresh as RefreshIcon } from '@mui/icons-material';
+  Plus,
+  Play,
+  ArrowLeft,
+  RefreshCw,
+  Loader2,
+} from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
+import { Label } from '../components/ui/label';
+import { Badge } from '../components/ui/badge';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Discussion, World, CreateDiscussionRequest, Character } from '../types';
 import { discussionsApi, worldsApi, charactersApi } from '../services/api';
@@ -113,11 +108,11 @@ const DiscussionsPage: React.FC = () => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'pending': return 'default';
-      case 'running': return 'warning';
-      case 'completed': return 'success';
-      case 'failed': return 'error';
-      default: return 'default';
+      case 'pending': return 'secondary';
+      case 'running': return 'default';
+      case 'completed': return 'default';
+      case 'failed': return 'destructive';
+      default: return 'secondary';
     }
   };
 
@@ -132,75 +127,83 @@ const DiscussionsPage: React.FC = () => {
   };
 
   if (loading) {
-    return <Typography>Loading...</Typography>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2 text-lg">Loading...</span>
+      </div>
+    );
   }
 
   return (
-    <Box>
-      <Box mb={2}>
-        <Breadcrumbs>
-          <Link
-            component="button"
-            variant="body1"
-            onClick={() => navigate('/worlds')}
-            sx={{ textDecoration: 'none' }}
-          >
-            世界管理
-          </Link>
-          <Typography color="text.primary">
+    <div className="container mx-auto py-8 px-4 max-w-7xl">
+      <nav className="mb-6">
+        <ol className="flex items-center space-x-2 text-sm text-muted-foreground">
+          <li>
+            <button
+              onClick={() => navigate('/worlds')}
+              className="hover:text-foreground transition-colors"
+            >
+              世界管理
+            </button>
+          </li>
+          <li>/</li>
+          <li className="text-foreground font-medium">
             {world?.name} - 議論管理
-          </Typography>
-        </Breadcrumbs>
-      </Box>
+          </li>
+        </ol>
+      </nav>
 
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4" component="h1">
-          議論管理
-        </Typography>
-        <Box>
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">議論管理</h1>
+          {world && (
+            <p className="text-muted-foreground">{world.name}の世界でキャラクターたちが議論を行います。</p>
+          )}
+        </div>
+        <div className="flex gap-2">
           <Button
-            startIcon={<RefreshIcon />}
+            variant="outline"
             onClick={loadDiscussions}
-            sx={{ mr: 1 }}
+            className="gap-2"
           >
+            <RefreshCw className="h-4 w-4" />
             更新
           </Button>
           <Button
-            startIcon={<ArrowBackIcon />}
+            variant="outline"
             onClick={() => navigate('/worlds')}
+            className="gap-2"
           >
+            <ArrowLeft className="h-4 w-4" />
             世界一覧に戻る
           </Button>
-        </Box>
-      </Box>
+        </div>
+      </div>
 
       {world && (
-        <Card sx={{ mb: 3 }}>
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-xl">世界: {world.name}</CardTitle>
+            <CardDescription>{world.description}</CardDescription>
+          </CardHeader>
           <CardContent>
-            <Typography variant="h6" gutterBottom>
-              世界: {world.name}
-            </Typography>
-            <Typography variant="body2" color="text.secondary" gutterBottom>
-              {world.description}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              登録キャラクター数: {characters.length}人
-            </Typography>
+            <p className="text-sm text-muted-foreground">
+              登録キャラクター数: <span className="font-medium">{characters.length}人</span>
+            </p>
           </CardContent>
         </Card>
       )}
 
       {characters.length === 0 && (
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Typography variant="body1" color="error">
-              この世界にはキャラクターが登録されていません。
+        <Card className="mb-6 border-destructive/50 bg-destructive/5">
+          <CardContent className="pt-6">
+            <p className="text-destructive mb-4">
+              この世界にはキャラクターが登録されていません。<br />
               議論を開始するには、まずキャラクターを作成してください。
-            </Typography>
+            </p>
             <Button
-              variant="contained"
               onClick={() => navigate(`/characters/${worldId}`)}
-              sx={{ mt: 2 }}
             >
               キャラクターを作成
             </Button>
@@ -208,96 +211,101 @@ const DiscussionsPage: React.FC = () => {
         </Card>
       )}
 
-      <Grid container spacing={3}>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {discussions.map((discussion) => (
-          <Grid item xs={12} md={6} lg={4} key={discussion.id}>
-            <Card>
-              <CardContent>
-                <Box display="flex" justifyContent="space-between" alignItems="center" mb={1}>
-                  <Typography variant="h6" component="h2">
-                    {discussion.theme}
-                  </Typography>
-                  <Chip
-                    label={getStatusText(discussion.status)}
-                    color={getStatusColor(discussion.status)}
-                    size="small"
-                  />
-                </Box>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  {discussion.description}
-                </Typography>
-                <Typography variant="caption" color="text.secondary">
-                  作成日: {new Date(discussion.created_at).toLocaleDateString('ja-JP')}
-                </Typography>
-              </CardContent>
-              <CardActions>
-                {discussion.status === 'pending' && characters.length > 0 && (
-                  <Button
-                    size="small"
-                    startIcon={<PlayIcon />}
-                    onClick={() => handleStartDiscussion(discussion.id)}
-                    variant="contained"
-                  >
-                    議論開始
-                  </Button>
-                )}
-                {(discussion.status === 'completed' || discussion.status === 'running') && (
-                  <Button
-                    size="small"
-                    onClick={() => handleViewResult(discussion)}
-                  >
-                    {discussion.status === 'completed' ? '結果を見る' : '議論を見る'}
-                  </Button>
-                )}
-              </CardActions>
-            </Card>
-          </Grid>
+          <Card key={discussion.id} className="hover:shadow-md transition-shadow">
+            <CardHeader>
+              <div className="flex justify-between items-start gap-3">
+                <div className="flex-1 min-w-0">
+                  <CardTitle className="text-xl leading-tight">{discussion.theme}</CardTitle>
+                </div>
+                <div className="flex-shrink-0">
+                  <Badge variant={getStatusColor(discussion.status)} className="whitespace-nowrap">
+                    {getStatusText(discussion.status)}
+                  </Badge>
+                </div>
+              </div>
+              <CardDescription className="text-sm text-muted-foreground mt-2">
+                {discussion.description}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <p className="text-xs text-muted-foreground">
+                作成日: {new Date(discussion.created_at).toLocaleDateString('ja-JP')}
+              </p>
+            </CardContent>
+            <CardFooter className="flex gap-2">
+              {discussion.status === 'pending' && characters.length > 0 && (
+                <Button
+                  size="sm"
+                  onClick={() => handleStartDiscussion(discussion.id)}
+                  className="gap-1"
+                >
+                  <Play className="h-3 w-3" />
+                  議論開始
+                </Button>
+              )}
+              {(discussion.status === 'completed' || discussion.status === 'running') && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={() => handleViewResult(discussion)}
+                >
+                  {discussion.status === 'completed' ? '結果を見る' : '議論を見る'}
+                </Button>
+              )}
+            </CardFooter>
+          </Card>
         ))}
-      </Grid>
+      </div>
 
-      <Fab
-        color="primary"
-        aria-label="add"
+      <Button
         onClick={handleOpenDialog}
-        sx={{ position: 'fixed', bottom: 16, right: 16 }}
         disabled={characters.length === 0}
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg"
+        size="icon"
       >
-        <AddIcon />
-      </Fab>
+        <Plus className="h-6 w-6" />
+      </Button>
 
-      <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
-        <DialogTitle>新しい議論テーマを作成</DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="議論テーマ"
-            fullWidth
-            variant="outlined"
-            value={formData.theme}
-            onChange={(e) => setFormData({ ...formData, theme: e.target.value })}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            margin="dense"
-            label="詳細説明"
-            fullWidth
-            multiline
-            rows={4}
-            variant="outlined"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-          />
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-[525px]">
+          <DialogHeader>
+            <DialogTitle>新しい議論テーマを作成</DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="theme">議論テーマ</Label>
+              <Input
+                id="theme"
+                value={formData.theme}
+                onChange={(e) => setFormData({ ...formData, theme: e.target.value })}
+                placeholder="議論のテーマを入力してください"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="description">詳細説明</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="議論の詳細や背景を入力してください"
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseDialog}>
+              キャンセル
+            </Button>
+            <Button onClick={handleSubmit}>
+              作成
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>キャンセル</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            作成
-          </Button>
-        </DialogActions>
       </Dialog>
 
-    </Box>
+    </div>
   );
 };
 

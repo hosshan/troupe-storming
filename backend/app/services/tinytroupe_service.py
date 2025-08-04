@@ -128,7 +128,7 @@ class TinyTroupeService:
             logger.error(f"📋 Full traceback: {traceback.format_exc()}")
             return None
     
-    def setup_world_agents(self, world: World, characters: List[Character]) -> Tuple[Optional[Any], List[Any]]:
+    async def setup_world_agents(self, world: World, characters: List[Character], stream_data=None) -> Tuple[Optional[Any], List[Any]]:
         """Create a TinyWorld and populate it with TinyPerson agents."""
         if not self.tinytroupe_available:
             logger.warning("❌ TinyTroupe not available")
@@ -136,6 +136,12 @@ class TinyTroupeService:
             
         try:
             logger.info(f"🏗️ Creating TinyWorld for '{world.name}' with {len(characters)} characters")
+            
+            # Stream progress: Starting world creation
+            if stream_data:
+                stream_data["progress"] = 20
+                stream_data["message"] = f"世界「{world.name}」を作成中..."
+                await asyncio.sleep(0.1)  # Allow stream to update
             
             # Create unique world name to avoid conflicts
             import uuid
@@ -154,6 +160,12 @@ class TinyTroupeService:
             except Exception as check_error:
                 logger.warning(f"⚠️ Could not check existing environments: {check_error}")
             
+            # Stream progress: Creating TinyWorld instance
+            if stream_data:
+                stream_data["progress"] = 30
+                stream_data["message"] = f"TinyWorld環境「{unique_world_name}」を初期化中..."
+                await asyncio.sleep(0.1)
+            
             # Create the world environment
             tiny_world = TinyWorld(
                 name=unique_world_name,
@@ -169,14 +181,30 @@ class TinyTroupeService:
             agents = []
             for i, character in enumerate(characters):
                 logger.info(f"🤖 Creating agent {i+1}/{len(characters)}: {character.name}")
+                
+                # Stream progress: Creating each agent
+                if stream_data:
+                    progress = 40 + (30 * i / len(characters))  # 40-70%
+                    stream_data["progress"] = int(progress)
+                    stream_data["message"] = f"AIエージェント「{character.name}」を作成中... ({i+1}/{len(characters)})"
+                    await asyncio.sleep(0.2)
+                
                 agent = self.create_agent_from_character(character)
                 if agent:
                     # Add agent to world
                     tiny_world.add_agent(agent)
                     agents.append(agent)
                     logger.info(f"✅ Added agent {character.name} to TinyWorld")
+                    
+                    # Stream progress: Agent created successfully
+                    if stream_data:
+                        stream_data["message"] = f"✅ エージェント「{character.name}」が世界に参加しました"
+                        await asyncio.sleep(0.3)
                 else:
                     logger.error(f"❌ Failed to create agent for {character.name}")
+                    if stream_data:
+                        stream_data["message"] = f"❌ エージェント「{character.name}」の作成に失敗"
+                        await asyncio.sleep(0.2)
             
             logger.info(f"🎯 Final result - TinyWorld: {tiny_world is not None}, Agents: {len(agents)}")
             return tiny_world, agents
@@ -318,7 +346,7 @@ class TinyTroupeService:
             logger.info("🌍 Creating TinyWorld and agents...")
             logger.info(f"📊 Input data - World: {world.name}, Characters: {[c.name for c in characters]}")
             
-            tiny_world, agents = self.setup_world_agents(world, characters)
+            tiny_world, agents = await self.setup_world_agents(world, characters)
             
             logger.info(f"🔍 Setup result - TinyWorld: {tiny_world is not None}, Agents count: {len(agents) if agents else 0}")
             
@@ -663,11 +691,11 @@ class TinyTroupeService:
             logger.info("🔑 OpenAI API key set for TinyTroupe")
             
             # Update progress
-            stream_data["progress"] = 75
-            stream_data["message"] = "TinyTroupeエージェントを作成中..."
+            stream_data["progress"] = 10
+            stream_data["message"] = "TinyTroupe環境を初期化中..."
             
-            # Create TinyWorld and agents
-            tiny_world, agents = self.setup_world_agents(world, characters)
+            # Create TinyWorld and agents with streaming updates
+            tiny_world, agents = await self.setup_world_agents(world, characters, stream_data)
             
             if not tiny_world or not agents:
                 logger.error("❌ TinyWorld or agents creation failed")
@@ -696,7 +724,7 @@ class TinyTroupeService:
             """
             
             # Update progress
-            stream_data["progress"] = 80
+            stream_data["progress"] = 75
             stream_data["message"] = f"{len(agents)}人のエージェントが議論を開始..."
             
             # Have each agent respond one by one with real-time updates
@@ -706,17 +734,26 @@ class TinyTroupeService:
                     logger.info(f"🤖 Processing agent {i+1}/{len(agents)}: {agent.name}")
                     
                     # Update progress for each agent
-                    progress = 80 + (15 * (i + 1) / len(agents))  # 80-95%
+                    progress = 75 + (20 * (i + 1) / len(agents))  # 75-95%
                     stream_data["progress"] = min(95, int(progress))
-                    stream_data["message"] = f"{agent.name}が発言中..."
+                    
+                    # Stream: Agent thinking
+                    stream_data["message"] = f"🧠 {agent.name}が議論テーマについて考えています..."
+                    await asyncio.sleep(0.5)
                     
                     # Make the agent think about the topic
                     logger.info(f"🧠 Making {agent.name} think about the topic...")
                     think_result = agent.think(discussion_prompt)
                     logger.info(f"💡 {agent.name} thinking result: {str(think_result)[:100]}...")
                     
+                    # Stream: Agent preparing response
+                    stream_data["message"] = f"💭 {agent.name}が意見をまとめています..."
+                    await asyncio.sleep(0.5)
+                    
                     # Get the agent's response
                     logger.info(f"🗣️ Getting response from {agent.name}...")
+                    stream_data["message"] = f"🗣️ {agent.name}が発言中... (AI処理中)"
+                    
                     response = agent.act(f"「{discussion.theme}」について、あなたの意見を2-3文で述べてください。")
                     logger.info(f"📝 {agent.name} response: {str(response)[:100]}...")
                     
@@ -724,6 +761,10 @@ class TinyTroupeService:
                     if response and str(response) != "None":
                         # Extract the actual content from the response
                         content = response.get('content', str(response)) if isinstance(response, dict) else str(response)
+                        
+                        # Stream: Agent completed response
+                        stream_data["message"] = f"✅ {agent.name}が発言を完了しました"
+                        await asyncio.sleep(0.2)
                         
                         # Add message immediately to stream
                         new_message = {
@@ -734,9 +775,18 @@ class TinyTroupeService:
                         messages.append(new_message)
                         stream_data["messages"] = messages.copy()  # Update stream immediately
                         
+                        # Show the actual content in progress message
+                        stream_data["message"] = f"💬 {agent.name}: {content[:50]}..." if len(content) > 50 else f"💬 {agent.name}: {content}"
+                        await asyncio.sleep(1)
+                        
                         logger.info(f"✅ Added streaming message from {agent.name}")
                     else:
                         logger.warning(f"⚠️ No response from {agent.name}, adding fallback message")
+                        
+                        # Stream: Agent had no response
+                        stream_data["message"] = f"⚠️ {agent.name}からの応答を取得できませんでした"
+                        await asyncio.sleep(0.3)
+                        
                         # Add a fallback response
                         fallback_message = {
                             "speaker": agent.name,

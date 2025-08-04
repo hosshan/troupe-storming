@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   Box,
   Typography,
@@ -30,6 +30,14 @@ interface DiscussionMessage {
   timestamp: string;
 }
 
+interface DiscussionProgress {
+  message: string;
+  progress: number;
+  completed: boolean;
+  error?: string;
+  messages?: DiscussionMessage[];
+}
+
 const DiscussionResultsPageSimple: React.FC = () => {
   const navigate = useNavigate();
   const { worldId, discussionId } = useParams<{
@@ -40,14 +48,34 @@ const DiscussionResultsPageSimple: React.FC = () => {
   const [discussion, setDiscussion] = useState<Discussion | null>(null);
   const [characters, setCharacters] = useState<Character[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [discussionRunning, setDiscussionRunning] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [progressMessage, setProgressMessage] = useState("");
   const [messages, setMessages] = useState<DiscussionMessage[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  const eventSourceRef = useRef<EventSource | null>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (worldId && discussionId) {
       loadInitialData();
     }
+
+    return () => {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+    };
   }, [worldId, discussionId]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
 
   const loadInitialData = async () => {
     try {
@@ -65,23 +93,6 @@ const DiscussionResultsPageSimple: React.FC = () => {
       console.log("Loaded discussion data:", discussionData);
       console.log("Discussion status:", discussionData.status);
       console.log("Discussion result:", discussionData.result);
-      console.log("Discussion result type:", typeof discussionData.result);
-      console.log(
-        "Discussion result keys:",
-        discussionData.result ? Object.keys(discussionData.result) : "null"
-      );
-      console.log(
-        "Discussion result.messages:",
-        discussionData.result?.messages
-      );
-      console.log(
-        "Discussion result.messages type:",
-        typeof discussionData.result?.messages
-      );
-      console.log(
-        "Discussion result.messages length:",
-        discussionData.result?.messages?.length
-      );
 
       setWorld(worldData);
       setDiscussion(discussionData);
@@ -97,40 +108,24 @@ const DiscussionResultsPageSimple: React.FC = () => {
           "Discussion is completed, setting messages:",
           discussionData.result.messages
         );
-        console.log("Messages count:", discussionData.result.messages.length);
-        console.log(
-          "Messages array:",
-          Array.isArray(discussionData.result.messages)
-        );
         setMessages(discussionData.result.messages);
-      } else if (
-        discussionData.status === "completed" &&
-        discussionData.result
-      ) {
-        console.log(
-          "Discussion is completed but no messages in result:",
-          discussionData.result
-        );
-        console.log("Result keys:", Object.keys(discussionData.result));
-        setMessages([]);
-      } else if (
-        discussionData.status === "completed" &&
-        !discussionData.result
-      ) {
-        console.log("Discussion is completed but no result data");
-        setMessages([]);
+        setProgress(100);
+        setProgressMessage("議論が完了しました");
+        setDiscussionRunning(false);
       } else if (discussionData.status === "running") {
-        console.log("Discussion is running, will poll for updates");
-        // Start polling for updates using existing logic
-        startNewDiscussion();
+        console.log("Discussion is running, starting streaming updates");
+        setDiscussionRunning(true);
+        startListeningForUpdates();
       } else if (discussionData.status === "pending") {
         console.log("Discussion is pending, ready to start");
-        // Discussion is ready to start
+        setDiscussionRunning(false);
       } else if (discussionData.status === "failed") {
         console.log("Discussion failed");
         setError("議論が失敗しました");
+        setDiscussionRunning(false);
       } else {
         console.log("Unknown discussion status:", discussionData.status);
+        setDiscussionRunning(false);
       }
     } catch (error) {
       console.error("Failed to load data:", error);
@@ -141,79 +136,78 @@ const DiscussionResultsPageSimple: React.FC = () => {
     }
   };
 
-  const startNewDiscussion = async () => {
+  const startDiscussion = async () => {
     try {
-      setLoading(true);
-      setError(null);
+      setDiscussionRunning(true);
+      setProgressMessage("議論を開始しています...");
+      setProgress(0);
       setMessages([]);
 
-      // Change status to pending first
-      await discussionsApi.update(parseInt(discussionId!), {
-        status: "pending",
-      });
-
-      // Start the discussion
       await discussionsApi.start(parseInt(discussionId!));
-
-      // Poll for updates
-      let pollCount = 0;
-      const maxPolls = 60; // 2 minutes max
-
-      const pollInterval = setInterval(async () => {
-        try {
-          pollCount++;
-          console.log(`Polling attempt ${pollCount}/${maxPolls}`);
-
-          const updatedDiscussion = await discussionsApi.getById(
-            parseInt(discussionId!)
-          );
-          setDiscussion(updatedDiscussion);
-
-          if (
-            updatedDiscussion.status === "completed" ||
-            updatedDiscussion.status === "failed"
-          ) {
-            clearInterval(pollInterval);
-            if (updatedDiscussion.result && updatedDiscussion.result.messages) {
-              setMessages(updatedDiscussion.result.messages);
-              console.log(
-                "Discussion completed with",
-                updatedDiscussion.result.messages.length,
-                "messages"
-              );
-            }
-            setLoading(false);
-          } else if (pollCount >= maxPolls) {
-            // Timeout after 2 minutes
-            clearInterval(pollInterval);
-            setError(
-              "議論がタイムアウトしました。バックエンドサーバーを確認してください。"
-            );
-            setLoading(false);
-          }
-        } catch (pollError) {
-          console.error("Polling error:", pollError);
-          if (pollCount >= 3) {
-            // Stop after 3 consecutive errors
-            clearInterval(pollInterval);
-            setError(
-              "議論の監視中にエラーが発生しました: " +
-                (pollError as Error).message
-            );
-            setLoading(false);
-          }
-        }
-      }, 2000); // Poll every 2 seconds
-
-      // Stop polling after 2 minutes
-      setTimeout(() => {
-        clearInterval(pollInterval);
-        setLoading(false);
-      }, 120000);
+      startListeningForUpdates();
     } catch (error) {
       console.error("Failed to start discussion:", error);
-      setError("議論の開始に失敗しました: " + (error as Error).message);
-      setLoading(false);
+      setError("議論の開始に失敗しました");
+      setDiscussionRunning(false);
+    }
+  };
+
+  const startListeningForUpdates = () => {
+    if (eventSourceRef.current) {
+      eventSourceRef.current.close();
+    }
+
+    setDiscussionRunning(true);
+
+    eventSourceRef.current = discussionsApi.streamProgress(
+      parseInt(discussionId!),
+      (data: DiscussionProgress) => {
+        setProgress(data.progress);
+        setProgressMessage(data.message);
+
+        if (data.messages) {
+          setMessages(data.messages);
+        }
+
+        if (data.completed) {
+          setDiscussionRunning(false);
+
+          if (data.error) {
+            setError(data.error);
+          } else {
+            setProgressMessage("議論が完了しました");
+            // Refresh discussion data to get final results
+            refreshDiscussion();
+          }
+        }
+      },
+      (error: string) => {
+        setDiscussionRunning(false);
+        setError(error);
+      }
+    );
+  };
+
+  const refreshDiscussion = async () => {
+    try {
+      console.log("Refreshing discussion data...");
+      const discussionData = await discussionsApi.getById(
+        parseInt(discussionId!)
+      );
+      console.log("Refreshed discussion data:", discussionData);
+      setDiscussion(discussionData);
+
+      if (discussionData.result && discussionData.result.messages) {
+        console.log(
+          "Setting refreshed messages:",
+          discussionData.result.messages
+        );
+        setMessages(discussionData.result.messages);
+      } else {
+        console.log("No messages in refreshed discussion data");
+      }
+    } catch (error) {
+      console.error("Failed to refresh discussion:", error);
     }
   };
 
@@ -303,6 +297,7 @@ const DiscussionResultsPageSimple: React.FC = () => {
             startIcon={<RefreshIcon />}
             onClick={loadInitialData}
             sx={{ mr: 1 }}
+            disabled={discussionRunning}
           >
             更新
           </Button>
@@ -340,7 +335,7 @@ const DiscussionResultsPageSimple: React.FC = () => {
             {discussion.status === "completed" && (
               <Button
                 variant="outlined"
-                onClick={startNewDiscussion}
+                onClick={startDiscussion}
                 sx={{ mt: 2 }}
               >
                 新しい議論を開始
@@ -350,7 +345,7 @@ const DiscussionResultsPageSimple: React.FC = () => {
             {discussion.status === "pending" && (
               <Button
                 variant="contained"
-                onClick={startNewDiscussion}
+                onClick={startDiscussion}
                 sx={{ mt: 2 }}
                 disabled={loading}
               >
@@ -376,6 +371,25 @@ const DiscussionResultsPageSimple: React.FC = () => {
         </Alert>
       )}
 
+      {discussionRunning && (
+        <Card sx={{ mb: 3 }}>
+          <CardContent>
+            <Box display="flex" alignItems="center" mb={2}>
+              <CircularProgress size={24} sx={{ mr: 2 }} />
+              <Typography variant="h6">議論実行中...</Typography>
+            </Box>
+            <LinearProgress
+              variant="determinate"
+              value={progress}
+              sx={{ mb: 2 }}
+            />
+            <Typography variant="body2" color="text.secondary">
+              {progressMessage}
+            </Typography>
+          </CardContent>
+        </Card>
+      )}
+
       <Paper sx={{ p: 2 }}>
         <Typography variant="h6" gutterBottom>
           議論の流れ ({messages.length}件のメッセージ)
@@ -391,13 +405,13 @@ const DiscussionResultsPageSimple: React.FC = () => {
           return null;
         })()}
 
-        {messages.length === 0 && (
+        {messages.length === 0 && !discussionRunning && (
           <Typography color="text.secondary" textAlign="center" py={4}>
-            議論メッセージがありません
+            まだ議論が開始されていません
           </Typography>
         )}
 
-        <List>
+        <List sx={{ maxHeight: "600px", overflow: "auto" }}>
           {messages.map((message, index) => (
             <ListItem
               key={index}
@@ -441,7 +455,14 @@ const DiscussionResultsPageSimple: React.FC = () => {
               />
             </ListItem>
           ))}
+          <div ref={messagesEndRef} />
         </List>
+
+        {discussionRunning && messages.length === 0 && (
+          <Box display="flex" justifyContent="center" py={4}>
+            <CircularProgress />
+          </Box>
+        )}
       </Paper>
     </Box>
   );

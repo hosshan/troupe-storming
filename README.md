@@ -2,6 +2,10 @@
 
 TinyTroupeと連携したブレインストーミングアプリケーションです。世界を作成し、キャラクターを登録して、テーマに基づいた議論をシミュレーションできます。
 
+| Words | Discussions | Discus |
+|:----:|:----:|:----:|
+| <img width="1511" height="823" alt="スクリーンショット 2025-08-04 22 55 44" src="https://github.com/user-attachments/assets/2e621e05-1724-4a90-93ef-ad7fb6807999" /> | <img width="1512" height="823" alt="スクリーンショット 2025-08-04 22 55 53" src="https://github.com/user-attachments/assets/90771348-f765-44df-94b7-8015be5de548" /> | <img width="1512" height="823" alt="スクリーンショット 2025-08-04 22 56 08" src="https://github.com/user-attachments/assets/5084808c-112b-451b-ad1f-490405bdefe2" /> |
+
 ## 機能
 
 - **世界管理**: 議論の舞台となる世界の作成・編集・削除

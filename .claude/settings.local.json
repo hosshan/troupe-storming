@@ -20,7 +20,8 @@
       "Bash(mv:*)",
       "Bash(git add:*)",
       "Bash(git commit:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(timeout:*)"
     ],
     "deny": []
   }

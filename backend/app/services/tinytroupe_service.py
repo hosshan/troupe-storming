@@ -2,6 +2,7 @@ import json
 import os
 import datetime
 import logging
+import asyncio
 from typing import List, Dict, Any, Optional, Tuple
 from sqlalchemy.orm import Session
 from app.models.models import Character, Discussion, World
@@ -136,14 +137,31 @@ class TinyTroupeService:
         try:
             logger.info(f"🏗️ Creating TinyWorld for '{world.name}' with {len(characters)} characters")
             
+            # Create unique world name to avoid conflicts
+            import uuid
+            unique_world_name = f"{world.name}_{uuid.uuid4().hex[:8]}"
+            logger.info(f"🆔 Using unique world name: {unique_world_name}")
+            
+            # Check existing environments and log them for debugging
+            try:
+                if hasattr(TinyWorld, '_environments') and TinyWorld._environments:
+                    existing_envs = list(TinyWorld._environments.keys())
+                    logger.info(f"📋 Existing environments: {existing_envs}")
+                    
+                    # If the world name already exists, log a warning
+                    if world.name in existing_envs:
+                        logger.warning(f"⚠️ World '{world.name}' already exists in TinyTroupe registry")
+            except Exception as check_error:
+                logger.warning(f"⚠️ Could not check existing environments: {check_error}")
+            
             # Create the world environment
             tiny_world = TinyWorld(
-                name=world.name,
+                name=unique_world_name,
                 agents=[],  # Initialize with empty agents list
                 initial_datetime=datetime.datetime.now()
             )
             
-            logger.info(f"✅ TinyWorld '{world.name}' created successfully")
+            logger.info(f"✅ TinyWorld '{unique_world_name}' created successfully")
             
             # Set world context/background (remove deprecated method)
             # tiny_world.set_communication_display(True)  # This method may not exist in current version
@@ -168,6 +186,34 @@ class TinyTroupeService:
             logger.error(f"🔍 Exception type: {type(e).__name__}")
             import traceback
             logger.error(f"📋 Full traceback: {traceback.format_exc()}")
+            
+            # Special handling for environment name conflicts
+            if "Environment names must be unique" in str(e):
+                logger.warning("🔄 Attempting retry with timestamp-based world name...")
+                try:
+                    import time
+                    timestamp_world_name = f"{world.name}_{int(time.time() * 1000)}"
+                    logger.info(f"🕐 Using timestamp-based world name: {timestamp_world_name}")
+                    
+                    tiny_world_retry = TinyWorld(
+                        name=timestamp_world_name,
+                        agents=[],
+                        initial_datetime=datetime.datetime.now()
+                    )
+                    
+                    agents = []
+                    for character in characters:
+                        agent = self.create_agent_from_character(character)
+                        if agent:
+                            tiny_world_retry.add_agent(agent)
+                            agents.append(agent)
+                    
+                    logger.info(f"✅ Retry successful with {len(agents)} agents")
+                    return tiny_world_retry, agents
+                    
+                except Exception as retry_error:
+                    logger.error(f"❌ Retry also failed: {retry_error}")
+            
             return None, []
     
     async def run_discussion(self, discussion: Discussion, characters: List[Character], world: World, stream_data=None) -> Dict[str, Any]:
@@ -302,7 +348,7 @@ class TinyTroupeService:
             各エージェントは自分の性格と背景に基づいて、このテーマについて意見を述べてください。
             建設的で多様な視点からの議論を行ってください。
             """
-            
+            tiny_world.make_everyone_accessible()
             # Have each agent think about and respond to the topic
             logger.info("💭 Starting agent discussions...")
             for i, agent in enumerate(agents):
@@ -364,10 +410,9 @@ class TinyTroupeService:
             # Try to get any additional world interactions
             logger.info("🌍 Running world simulation...")
             try:
-                tiny_world.make_everyone_accessible()
                 # Run a brief world simulation if possible
                 logger.info("⚙️ Executing tiny_world.run(1)...")
-                tiny_world.run(1)  # Run for 1 step
+                tiny_world.run(3)  # Run for 1 step
                 logger.info("✅ World simulation completed")
                 
                 logger.info("📥 Extracting messages from world...")

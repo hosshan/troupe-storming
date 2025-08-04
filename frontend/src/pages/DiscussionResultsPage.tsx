@@ -56,15 +56,21 @@ const DiscussionResultsPage: React.FC = () => {
 
   const eventSourceRef = useRef<EventSource | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isComponentMountedRef = useRef(true);
 
   useEffect(() => {
+    isComponentMountedRef.current = true;
+
     if (worldId && discussionId) {
       loadInitialData();
     }
 
     return () => {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
+      isComponentMountedRef.current = false;
+      cleanupEventSource();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
       }
     };
   }, [worldId, discussionId]);
@@ -77,9 +83,18 @@ const DiscussionResultsPage: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const cleanupEventSource = () => {
+    if (eventSourceRef.current) {
+      console.log("Cleaning up EventSource connection");
+      eventSourceRef.current.close();
+      eventSourceRef.current = null;
+    }
+  };
+
   const loadInitialData = async () => {
     try {
       setLoading(true);
+      setError(null);
       console.log("Loading initial data for discussion:", discussionId);
 
       const [worldData, discussionData, charactersData] = await Promise.all([
@@ -91,6 +106,8 @@ const DiscussionResultsPage: React.FC = () => {
       console.log("Loaded discussion data:", discussionData);
       console.log("Discussion status:", discussionData.status);
       console.log("Discussion result:", discussionData.result);
+
+      if (!isComponentMountedRef.current) return;
 
       setWorld(worldData);
       setDiscussion(discussionData);
@@ -119,10 +136,14 @@ const DiscussionResultsPage: React.FC = () => {
       }
     } catch (error) {
       console.error("Failed to load data:", error);
-      setError("データの読み込みに失敗しました");
+      if (isComponentMountedRef.current) {
+        setError("データの読み込みに失敗しました");
+      }
     } finally {
-      setLoading(false);
-      console.log("Loading completed");
+      if (isComponentMountedRef.current) {
+        setLoading(false);
+        console.log("Loading completed");
+      }
     }
   };
 
@@ -137,45 +158,74 @@ const DiscussionResultsPage: React.FC = () => {
       startListeningForUpdates();
     } catch (error) {
       console.error("Failed to start discussion:", error);
-      setError("議論の開始に失敗しました");
-      setDiscussionRunning(false);
+      if (isComponentMountedRef.current) {
+        setError("議論の開始に失敗しました");
+        setDiscussionRunning(false);
+      }
     }
   };
 
   const startListeningForUpdates = () => {
-    if (eventSourceRef.current) {
-      eventSourceRef.current.close();
-    }
+    cleanupEventSource();
+
+    if (!isComponentMountedRef.current) return;
 
     setDiscussionRunning(true);
 
-    eventSourceRef.current = discussionsApi.streamProgress(
-      parseInt(discussionId!),
-      (data: DiscussionProgress) => {
-        setProgress(data.progress);
-        setProgressMessage(data.message);
+    try {
+      eventSourceRef.current = discussionsApi.streamProgress(
+        parseInt(discussionId!),
+        (data: DiscussionProgress) => {
+          if (!isComponentMountedRef.current) return;
 
-        if (data.messages) {
-          setMessages(data.messages);
-        }
+          setProgress(data.progress);
+          setProgressMessage(data.message);
 
-        if (data.completed) {
-          setDiscussionRunning(false);
-
-          if (data.error) {
-            setError(data.error);
-          } else {
-            setProgressMessage("議論が完了しました");
-            // Refresh discussion data to get final results
-            refreshDiscussion();
+          if (data.messages) {
+            setMessages(data.messages);
           }
+
+          if (data.completed) {
+            setDiscussionRunning(false);
+
+            if (data.error) {
+              setError(data.error);
+            } else {
+              setProgressMessage("議論が完了しました");
+              // Refresh discussion data to get final results
+              refreshDiscussion();
+            }
+          }
+        },
+        (error: string) => {
+          if (!isComponentMountedRef.current) return;
+
+          console.error("EventSource error:", error);
+          setDiscussionRunning(false);
+          setError(error);
+
+          // Try to reconnect after a delay
+          if (reconnectTimeoutRef.current) {
+            clearTimeout(reconnectTimeoutRef.current);
+          }
+          reconnectTimeoutRef.current = setTimeout(() => {
+            if (
+              isComponentMountedRef.current &&
+              discussion?.status === "running"
+            ) {
+              console.log("Attempting to reconnect to discussion stream...");
+              startListeningForUpdates();
+            }
+          }, 5000);
         }
-      },
-      (error: string) => {
+      );
+    } catch (error) {
+      console.error("Failed to start EventSource:", error);
+      if (isComponentMountedRef.current) {
+        setError("リアルタイム更新の開始に失敗しました");
         setDiscussionRunning(false);
-        setError(error);
       }
-    );
+    }
   };
 
   const refreshDiscussion = async () => {
@@ -185,6 +235,9 @@ const DiscussionResultsPage: React.FC = () => {
         parseInt(discussionId!)
       );
       console.log("Refreshed discussion data:", discussionData);
+
+      if (!isComponentMountedRef.current) return;
+
       setDiscussion(discussionData);
 
       if (discussionData.result && discussionData.result.messages) {

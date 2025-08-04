@@ -114,6 +114,8 @@ export const discussionsApi = {
     api.post(`/discussions/${id}/start`).then((res) => res.data),
   update: (id: number, discussion: Partial<Discussion>): Promise<Discussion> =>
     api.put(`/discussions/${id}`, discussion).then((res) => res.data),
+  stopStream: (id: number): Promise<{ message: string }> =>
+    api.delete(`/discussions/${id}/stream`).then((res) => res.data),
   streamProgress: (
     discussionId: number,
     onProgress: (data: {
@@ -133,16 +135,30 @@ export const discussionsApi = {
       `${API_BASE_URL}/discussions/${discussionId}/stream`
     );
 
+    // Set up connection timeout
+    const connectionTimeout = setTimeout(() => {
+      console.error("EventSource connection timeout");
+      eventSource.close();
+      onError("接続タイムアウトが発生しました");
+    }, 30000); // 30 seconds timeout
+
+    eventSource.onopen = () => {
+      console.log("EventSource connection opened");
+      clearTimeout(connectionTimeout);
+    };
+
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
         onProgress(data);
-        
+
         if (data.completed) {
+          clearTimeout(connectionTimeout);
           eventSource.close();
         }
       } catch (error) {
         console.error("Error parsing SSE data:", error);
+        clearTimeout(connectionTimeout);
         eventSource.close();
         onError("データの解析に失敗しました");
       }
@@ -150,6 +166,7 @@ export const discussionsApi = {
 
     eventSource.onerror = (error) => {
       console.error("SSE connection error:", error);
+      clearTimeout(connectionTimeout);
       eventSource.close();
       onError("接続エラーが発生しました");
     };

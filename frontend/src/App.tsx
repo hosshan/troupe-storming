@@ -1,24 +1,24 @@
-import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
-import { ThemeProvider, createTheme } from '@mui/material/styles';
-import CssBaseline from '@mui/material/CssBaseline';
-import AppBar from '@mui/material/AppBar';
-import Toolbar from '@mui/material/Toolbar';
-import Typography from '@mui/material/Typography';
-import Container from '@mui/material/Container';
-import WorldsPage from './pages/WorldsPage';
-import CharactersPage from './pages/CharactersPage';
-import DiscussionsPage from './pages/DiscussionsPage';
-import DiscussionResultsPageSimple from './pages/DiscussionResultsPageSimple';
+import React from "react";
+import { BrowserRouter as Router, Routes, Route } from "react-router-dom";
+import { ThemeProvider, createTheme } from "@mui/material/styles";
+import CssBaseline from "@mui/material/CssBaseline";
+import AppBar from "@mui/material/AppBar";
+import Toolbar from "@mui/material/Toolbar";
+import Typography from "@mui/material/Typography";
+import Container from "@mui/material/Container";
+import WorldsPage from "./pages/WorldsPage";
+import CharactersPage from "./pages/CharactersPage";
+import DiscussionsPage from "./pages/DiscussionsPage";
+import DiscussionResultsPage from "./pages/DiscussionResultsPage";
 
 const theme = createTheme({
   palette: {
-    mode: 'light',
+    mode: "light",
     primary: {
-      main: '#1976d2',
+      main: "#1976d2",
     },
     secondary: {
-      main: '#dc004e',
+      main: "#dc004e",
     },
   },
 });
@@ -41,7 +41,10 @@ function App() {
             <Route path="/worlds" element={<WorldsPage />} />
             <Route path="/characters/:worldId" element={<CharactersPage />} />
             <Route path="/discussions/:worldId" element={<DiscussionsPage />} />
-            <Route path="/discussions/:worldId/results/:discussionId" element={<DiscussionResultsPageSimple />} />
+            <Route
+              path="/discussions/:worldId/results/:discussionId"
+              element={<DiscussionResultsPage />}
+            />
           </Routes>
         </Container>
       </Router>

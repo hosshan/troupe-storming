@@ -135,6 +135,14 @@ class TinyTroupeService:
             return None, []
             
         try:
+            # Clear global registries to avoid name conflicts
+            logger.info("🧹 Clearing TinyTroupe global registries...")
+            from tinytroupe.agent import TinyPerson
+            from tinytroupe.environment import TinyWorld
+            TinyPerson.clear_agents()
+            TinyWorld.clear_environments()
+            logger.info("✅ TinyTroupe global registries cleared")
+            
             logger.info(f"🏗️ Creating TinyWorld for '{world.name}' with {len(characters)} characters")
             
             # Stream progress: Starting world creation
@@ -439,8 +447,8 @@ class TinyTroupeService:
             logger.info("🌍 Running world simulation...")
             try:
                 # Run a brief world simulation if possible
-                logger.info("⚙️ Executing tiny_world.run(1)...")
-                tiny_world.run(3)  # Run for 1 step
+                logger.info("⚙️ Executing tiny_world.run(3)...")
+                tiny_world.run(3)
                 logger.info("✅ World simulation completed")
                 
                 logger.info("📥 Extracting messages from world...")

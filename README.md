@@ -24,7 +24,7 @@ TinyTroupeと連携したブレインストーミングアプリケーション�
 ### Frontend
 - TypeScript
 - React 18
-- Material-UI
+- Shadcn/UI
 - Axios
 
 ## セットアップ

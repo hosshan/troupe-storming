@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect } from "react";
 import {
   Box,
   Typography,
@@ -17,12 +17,18 @@ import {
   FormControlLabel,
   Slider,
   CircularProgress,
-  LinearProgress,
-} from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, People as PeopleIcon, Chat as ChatIcon, AutoFixHigh as GenerateIcon } from '@mui/icons-material';
-import { useNavigate } from 'react-router-dom';
-import { World, CreateWorldRequest } from '../types';
-import { worldsApi } from '../services/api';
+} from "@mui/material";
+import {
+  Add as AddIcon,
+  Edit as EditIcon,
+  Delete as DeleteIcon,
+  People as PeopleIcon,
+  Chat as ChatIcon,
+  AutoFixHigh as GenerateIcon,
+} from "@mui/icons-material";
+import { useNavigate } from "react-router-dom";
+import { World, CreateWorldRequest } from "../types";
+import { worldsApi } from "../services/api";
 
 const WorldsPage: React.FC = () => {
   const navigate = useNavigate();
@@ -32,18 +38,17 @@ const WorldsPage: React.FC = () => {
   const [generateDialogOpen, setGenerateDialogOpen] = useState(false);
   const [editingWorld, setEditingWorld] = useState<World | null>(null);
   const [formData, setFormData] = useState<CreateWorldRequest>({
-    name: '',
-    description: '',
-    background: '',
+    name: "",
+    description: "",
+    background: "",
   });
   const [generateData, setGenerateData] = useState({
-    keywords: '',
+    keywords: "",
     generate_characters: true,
     character_count: 3,
   });
   const [generating, setGenerating] = useState(false);
-  const [progressMessage, setProgressMessage] = useState('');
-  const [progressValue, setProgressValue] = useState(0);
+  const [progressMessage, setProgressMessage] = useState("");
 
   useEffect(() => {
     loadWorlds();
@@ -54,7 +59,7 @@ const WorldsPage: React.FC = () => {
       const data = await worldsApi.getAll();
       setWorlds(data);
     } catch (error) {
-      console.error('Failed to load worlds:', error);
+      console.error("Failed to load worlds:", error);
     } finally {
       setLoading(false);
     }
@@ -62,22 +67,26 @@ const WorldsPage: React.FC = () => {
 
   const handleOpenDialog = (world?: World) => {
     setEditingWorld(world || null);
-    setFormData(world ? {
-      name: world.name,
-      description: world.description,
-      background: world.background,
-    } : {
-      name: '',
-      description: '',
-      background: '',
-    });
+    setFormData(
+      world
+        ? {
+            name: world.name,
+            description: world.description,
+            background: world.background,
+          }
+        : {
+            name: "",
+            description: "",
+            background: "",
+          }
+    );
     setDialogOpen(true);
   };
 
   const handleCloseDialog = () => {
     setDialogOpen(false);
     setEditingWorld(null);
-    setFormData({ name: '', description: '', background: '' });
+    setFormData({ name: "", description: "", background: "" });
   };
 
   const handleSubmit = async () => {
@@ -90,24 +99,24 @@ const WorldsPage: React.FC = () => {
       handleCloseDialog();
       loadWorlds();
     } catch (error) {
-      console.error('Failed to save world:', error);
+      console.error("Failed to save world:", error);
     }
   };
 
   const handleDelete = async (worldId: number) => {
-    if (window.confirm('この世界を削除しますか？')) {
+    if (window.confirm("この世界を削除しますか？")) {
       try {
         await worldsApi.delete(worldId);
         loadWorlds();
       } catch (error) {
-        console.error('Failed to delete world:', error);
+        console.error("Failed to delete world:", error);
       }
     }
   };
 
   const handleOpenGenerateDialog = () => {
     setGenerateData({
-      keywords: '',
+      keywords: "",
       generate_characters: true,
       character_count: 3,
     });
@@ -117,7 +126,7 @@ const WorldsPage: React.FC = () => {
   const handleCloseGenerateDialog = () => {
     setGenerateDialogOpen(false);
     setGenerateData({
-      keywords: '',
+      keywords: "",
       generate_characters: true,
       character_count: 3,
     });
@@ -125,45 +134,31 @@ const WorldsPage: React.FC = () => {
 
   const handleGenerate = async () => {
     if (!generateData.keywords.trim()) {
-      alert('キーワードを入力してください');
+      alert("キーワードを入力してください");
       return;
     }
 
     setGenerating(true);
-    setProgressMessage('準備中...');
-    setProgressValue(0);
+    setProgressMessage("AIで世界を生成中...");
 
     try {
-      worldsApi.generateStream(
-        generateData,
-        // onProgress
-        (message: string, progress: number) => {
-          setProgressMessage(message);
-          setProgressValue(progress);
-        },
-        // onComplete
-        (result: any) => {
-          setGenerating(false);
-          handleCloseGenerateDialog();
-          loadWorlds();
-          
-          if (result.characters.length > 0) {
-            alert(`世界「${result.world.name}」と${result.characters.length}人のキャラクターを生成しました！`);
-          } else {
-            alert(`世界「${result.world.name}」を生成しました！`);
-          }
-        },
-        // onError
-        (error: string) => {
-          setGenerating(false);
-          console.error('Failed to generate world:', error);
-          alert(`世界の生成に失敗しました: ${error}`);
-        }
-      );
+      const result = await worldsApi.generate(generateData);
+
+      setGenerating(false);
+      handleCloseGenerateDialog();
+      loadWorlds();
+
+      if (result.characters.length > 0) {
+        alert(
+          `世界「${result.world.name}」と${result.characters.length}人のキャラクターを生成しました！`
+        );
+      } else {
+        alert(`世界「${result.world.name}」を生成しました！`);
+      }
     } catch (error) {
       setGenerating(false);
-      console.error('Failed to start generation:', error);
-      alert('世界の生成開始に失敗しました');
+      console.error("Failed to generate world:", error);
+      alert("世界の生成に失敗しました。もう一度お試しください。");
     }
   };
 
@@ -173,7 +168,12 @@ const WorldsPage: React.FC = () => {
 
   return (
     <Box>
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
+      <Box
+        display="flex"
+        justifyContent="space-between"
+        alignItems="center"
+        mb={3}
+      >
         <Typography variant="h4" component="h1">
           世界管理
         </Typography>
@@ -199,7 +199,7 @@ const WorldsPage: React.FC = () => {
                 </Typography>
                 <Typography variant="body2" color="text.secondary">
                   背景: {world.background.substring(0, 100)}
-                  {world.background.length > 100 ? '...' : ''}
+                  {world.background.length > 100 ? "..." : ""}
                 </Typography>
               </CardContent>
               <CardActions>
@@ -242,14 +242,19 @@ const WorldsPage: React.FC = () => {
         color="primary"
         aria-label="add"
         onClick={() => handleOpenDialog()}
-        sx={{ position: 'fixed', bottom: 16, right: 16 }}
+        sx={{ position: "fixed", bottom: 16, right: 16 }}
       >
         <AddIcon />
       </Fab>
 
-      <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+      <Dialog
+        open={dialogOpen}
+        onClose={handleCloseDialog}
+        maxWidth="md"
+        fullWidth
+      >
         <DialogTitle>
-          {editingWorld ? '世界を編集' : '新しい世界を作成'}
+          {editingWorld ? "世界を編集" : "新しい世界を作成"}
         </DialogTitle>
         <DialogContent>
           <TextField
@@ -270,7 +275,9 @@ const WorldsPage: React.FC = () => {
             rows={3}
             variant="outlined"
             value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, description: e.target.value })
+            }
             sx={{ mb: 2 }}
           />
           <TextField
@@ -281,19 +288,26 @@ const WorldsPage: React.FC = () => {
             rows={5}
             variant="outlined"
             value={formData.background}
-            onChange={(e) => setFormData({ ...formData, background: e.target.value })}
+            onChange={(e) =>
+              setFormData({ ...formData, background: e.target.value })
+            }
           />
         </DialogContent>
         <DialogActions>
           <Button onClick={handleCloseDialog}>キャンセル</Button>
           <Button onClick={handleSubmit} variant="contained">
-            {editingWorld ? '更新' : '作成'}
+            {editingWorld ? "更新" : "作成"}
           </Button>
         </DialogActions>
       </Dialog>
 
       {/* 世界生成ダイアログ */}
-      <Dialog open={generateDialogOpen} onClose={handleCloseGenerateDialog} maxWidth="sm" fullWidth>
+      <Dialog
+        open={generateDialogOpen}
+        onClose={handleCloseGenerateDialog}
+        maxWidth="sm"
+        fullWidth
+      >
         <DialogTitle>AIで世界を生成</DialogTitle>
         <DialogContent>
           <TextField
@@ -304,22 +318,29 @@ const WorldsPage: React.FC = () => {
             fullWidth
             variant="outlined"
             value={generateData.keywords}
-            onChange={(e) => setGenerateData({ ...generateData, keywords: e.target.value })}
+            onChange={(e) =>
+              setGenerateData({ ...generateData, keywords: e.target.value })
+            }
             sx={{ mb: 3 }}
             helperText="世界のテーマやキーワードを入力してください"
           />
-          
+
           <FormControlLabel
             control={
               <Switch
                 checked={generateData.generate_characters}
-                onChange={(e) => setGenerateData({ ...generateData, generate_characters: e.target.checked })}
+                onChange={(e) =>
+                  setGenerateData({
+                    ...generateData,
+                    generate_characters: e.target.checked,
+                  })
+                }
               />
             }
             label="キャラクターも一緒に生成する"
             sx={{ mb: 2 }}
           />
-          
+
           {generateData.generate_characters && (
             <Box sx={{ mb: 2 }}>
               <Typography gutterBottom>
@@ -327,7 +348,12 @@ const WorldsPage: React.FC = () => {
               </Typography>
               <Slider
                 value={generateData.character_count}
-                onChange={(_, value) => setGenerateData({ ...generateData, character_count: value as number })}
+                onChange={(_, value) =>
+                  setGenerateData({
+                    ...generateData,
+                    character_count: value as number,
+                  })
+                }
                 min={1}
                 max={5}
                 step={1}
@@ -339,17 +365,17 @@ const WorldsPage: React.FC = () => {
 
           {/* Progress display during generation */}
           {generating && (
-            <Box sx={{ mt: 3, mb: 2 }}>
-              <Typography variant="body2" color="text.secondary" gutterBottom>
+            <Box sx={{ mt: 3, mb: 2, textAlign: "center" }}>
+              <CircularProgress size={40} sx={{ mb: 2 }} />
+              <Typography variant="body2" color="text.secondary">
                 {progressMessage}
               </Typography>
-              <LinearProgress 
-                variant="determinate" 
-                value={progressValue} 
-                sx={{ height: 8, borderRadius: 4 }}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                {progressValue}%
+              <Typography
+                variant="caption"
+                color="text.secondary"
+                sx={{ mt: 1, display: "block" }}
+              >
+                しばらくお待ちください...
               </Typography>
             </Box>
           )}
@@ -358,13 +384,15 @@ const WorldsPage: React.FC = () => {
           <Button onClick={handleCloseGenerateDialog} disabled={generating}>
             キャンセル
           </Button>
-          <Button 
-            onClick={handleGenerate} 
-            variant="contained" 
+          <Button
+            onClick={handleGenerate}
+            variant="contained"
             disabled={generating || !generateData.keywords.trim()}
-            startIcon={generating ? <CircularProgress size={20} /> : <GenerateIcon />}
+            startIcon={
+              generating ? <CircularProgress size={20} /> : <GenerateIcon />
+            }
           >
-            {generating ? '生成中...' : '生成'}
+            {generating ? "生成中..." : "生成"}
           </Button>
         </DialogActions>
       </Dialog>

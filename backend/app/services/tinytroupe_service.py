@@ -377,7 +377,15 @@ class TinyTroupeService:
             
             # Set up the discussion topic in the world
             discussion_prompt = f"議論テーマ: {discussion.theme}"
-            tiny_world.make_everyone_accessible()
+            
+            # Make all agents accessible to each other for conversation
+            try:
+                if hasattr(tiny_world, 'make_everyone_accessible'):
+                    tiny_world.make_everyone_accessible()
+                    logger.info("✅ Made all agents accessible to each other")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not make agents accessible: {e}")
+            
             # Have each agent think about and respond to the topic
             logger.info("💭 Starting agent discussions...")
             for i, agent in enumerate(agents):
@@ -393,15 +401,64 @@ class TinyTroupeService:
                         logger.warning(f"⚠️ Thinking failed for {agent.name}: {think_error}")
                         # Continue without thinking step
                     
-                    # Get the agent's response
+                    # Get the agent's response using listen_and_act
                     logger.info(f"🗣️ Getting response from {agent.name}...")
-                    response = agent.act(f"「{discussion.theme}」について、簡潔に意見を述べてください。")
-                    logger.info(f"📝 {agent.name} response: {str(response)[:100]}...")
+                    agent.listen_and_act(f"「{discussion.theme}」について、簡潔に意見を述べてください。")
+                    response = agent.pop_actions_and_get_contents_for("TALK", False)
+                    logger.info(f"📝 {agent.name} response: {response}...")
                     
-                    if response:
+                    # Try to extract actual conversation content from agent
+                    content = None
+                    
+                    # First, try to get from the world's communication buffer (most recent)
+                    if hasattr(tiny_world, 'communication_buffer'):
+                        communications = getattr(tiny_world, 'communication_buffer', [])
+                        if communications:
+                            # Get the most recent communication from this agent
+                            for comm in reversed(communications[-10:]):  # Check last 10 communications
+                                if hasattr(comm, 'source') and hasattr(comm, 'content'):
+                                    speaker_name = getattr(comm.source, 'name', '')
+                                    if speaker_name == agent.name:
+                                        comm_content = str(comm.content)
+                                        if comm_content and len(comm_content.strip()) > 10:
+                                            content = comm_content
+                                            logger.info(f"💬 Found recent communication from {agent.name}: {content[:50]}...")
+                                            break
+                    
+                    # If no communication found, try to get from agent's episodic memory
+                    if not content and hasattr(agent, 'episodic_memory') and agent.episodic_memory:
+                        recent_memories = agent.episodic_memory.retrieve_all()
+                        if recent_memories:
+                            # Get the most recent memory that contains actual content
+                            for memory in reversed(recent_memories[-5:]):  # Check last 5 memories
+                                if hasattr(memory, 'content') and memory.content and len(str(memory.content)) > 10:
+                                    content = str(memory.content)
+                                    logger.info(f"📚 Found content from {agent.name}'s memory: {content[:50]}...")
+                                    break
+                    
+                    # If no memory content, try to get from agent's current state
+                    if not content and hasattr(agent, 'current_action'):
+                        current_action = getattr(agent, 'current_action', None)
+                        if current_action and str(current_action) != "None":
+                            content = str(current_action)
+                            logger.info(f"🎭 Found content from {agent.name}'s current action: {content[:50]}...")
+                    
+                    # If still no content, try to get from agent's last communication
+                    if not content and hasattr(agent, 'last_communication'):
+                        last_comm = getattr(agent, 'last_communication', None)
+                        if last_comm and str(last_comm) != "None":
+                            content = str(last_comm)
+                            logger.info(f"💬 Found content from {agent.name}'s last communication: {content[:50]}...")
+                    
+                    # If response is not None and has content, use it
+                    if response and str(response) != "None":
                         # Extract the actual content from the response
-                        content = response.get('content', str(response)) if isinstance(response, dict) else str(response)
-                        
+                        response_content = response.get('content', str(response)) if isinstance(response, dict) else str(response)
+                        if response_content and len(response_content.strip()) > 5:
+                            content = response_content
+                            logger.info(f"📝 Using direct response from {agent.name}: {content[:50]}...")
+                    
+                    if content and len(content.strip()) > 5:
                         messages.append({
                             "speaker": agent.name,
                             "content": content,
@@ -409,7 +466,14 @@ class TinyTroupeService:
                         })
                         logger.info(f"✅ Added message from {agent.name}")
                     else:
-                        logger.warning(f"⚠️ No response from {agent.name}")
+                        logger.warning(f"⚠️ No response from {agent.name}, adding fallback message")
+                        # Add a fallback response when no response is received
+                        messages.append({
+                            "speaker": agent.name,
+                            "content": f"{agent.name}として、「{discussion.theme}」について考えています...",
+                            "timestamp": datetime.datetime.now().isoformat()
+                        })
+                        logger.info(f"✅ Added fallback message for {agent.name}")
                     
                     # Small delay to prevent API rate limiting
                     await asyncio.sleep(0.5)
@@ -452,16 +516,57 @@ class TinyTroupeService:
             try:
                 # Run a brief world simulation if possible
                 logger.info("⚙️ Executing tiny_world.run(3)...")
-                tiny_world.run(3)
+                tiny_world.run(2)
                 logger.info("✅ World simulation completed")
                 
                 logger.info("📥 Extracting messages from world...")
-                world_messages = self._extract_messages_from_world(tiny_world, agents)
-                logger.info(f"📊 Extracted {len(world_messages)} messages from world")
+                # Try to get additional messages from world communications
+                if hasattr(tiny_world, 'communication_buffer'):
+                    communications = getattr(tiny_world, 'communication_buffer', [])
+                    if communications:
+                        logger.info(f"📥 Found {len(communications)} communications in world buffer")
+                        # Get communications that weren't already captured
+                        existing_speakers = {msg.get('speaker') for msg in messages}
+                        for comm in communications:
+                            if hasattr(comm, 'content') and hasattr(comm, 'source'):
+                                speaker_name = getattr(comm.source, 'name', 'Unknown')
+                                content = comm.content
+                                if content and len(str(content).strip()) > 10:
+                                    # Check if this speaker already has a message
+                                    if speaker_name not in existing_speakers:
+                                        messages.append({
+                                            "speaker": speaker_name,
+                                            "content": str(content),
+                                            "timestamp": datetime.datetime.now().isoformat()
+                                        })
+                                        logger.info(f"💬 Added additional communication from {speaker_name}: {str(content)[:50]}...")
+                                        existing_speakers.add(speaker_name)
                 
-                if len(world_messages) > 1:  # More than just the system message
-                    messages.extend(world_messages[1:])  # Skip the duplicate system message
-                    logger.info(f"➕ Added {len(world_messages)-1} world messages to discussion")
+                # If no additional communications found, try to get from individual agents
+                if len(messages) <= len(characters) + 1:  # Only system message + one per character
+                    logger.info("🔍 No additional world communications found, trying to extract from individual agents...")
+                    for agent in agents:
+                        try:
+                            # Try to get the most recent action or thought from each agent
+                            if hasattr(agent, 'episodic_memory') and agent.episodic_memory:
+                                recent_memories = agent.episodic_memory.retrieve_all()
+                                if recent_memories:
+                                    # Find the most recent meaningful memory
+                                    for memory in reversed(recent_memories[-3:]):
+                                        if hasattr(memory, 'content') and memory.content and len(str(memory.content)) > 10:
+                                            # Check if this memory is not already in messages
+                                            memory_content = str(memory.content)
+                                            if not any(msg.get('content', '').startswith(memory_content[:20]) for msg in messages if msg.get('speaker') == agent.name):
+                                                messages.append({
+                                                    "speaker": agent.name,
+                                                    "content": memory_content,
+                                                    "timestamp": datetime.datetime.now().isoformat()
+                                                })
+                                                logger.info(f"📚 Added memory content from {agent.name}: {memory_content[:50]}...")
+                                                break
+                        except Exception as agent_extract_error:
+                            logger.warning(f"⚠️ Error extracting from agent {agent.name}: {agent_extract_error}")
+                            
             except Exception as world_error:
                 logger.warning(f"⚠️ World simulation step failed: {world_error}")
             
@@ -646,26 +751,67 @@ class TinyTroupeService:
             communications = getattr(tiny_world, 'communication_buffer', [])
             
             if communications:
+                logger.info(f"📥 Found {len(communications)} communications in world buffer")
                 for comm in communications:
                     if hasattr(comm, 'content') and hasattr(comm, 'source'):
-                        messages.append({
-                            "speaker": getattr(comm.source, 'name', 'Unknown'),
-                            "content": comm.content,
-                            "timestamp": datetime.datetime.now().isoformat()
-                        })
-            else:
-                # Try alternative methods to get agent interactions
+                        speaker_name = getattr(comm.source, 'name', 'Unknown')
+                        content = comm.content
+                        if content and len(str(content).strip()) > 5:
+                            messages.append({
+                                "speaker": speaker_name,
+                                "content": str(content),
+                                "timestamp": datetime.datetime.now().isoformat()
+                            })
+                            logger.info(f"💬 Added communication from {speaker_name}: {str(content)[:50]}...")
+            
+            # Try to get from world's conversation history
+            if hasattr(tiny_world, 'conversation_history'):
+                conv_history = getattr(tiny_world, 'conversation_history', [])
+                if conv_history:
+                    logger.info(f"📥 Found {len(conv_history)} items in conversation history")
+                    for conv in conv_history:
+                        if hasattr(conv, 'speaker') and hasattr(conv, 'content'):
+                            content = conv.content
+                            if content and len(str(content).strip()) > 5:
+                                messages.append({
+                                    "speaker": conv.speaker,
+                                    "content": str(content),
+                                    "timestamp": datetime.datetime.now().isoformat()
+                                })
+                                logger.info(f"💬 Added conversation from {conv.speaker}: {str(content)[:50]}...")
+            
+            # Try to get from world's recent actions
+            if hasattr(tiny_world, 'recent_actions'):
+                recent_actions = getattr(tiny_world, 'recent_actions', [])
+                if recent_actions:
+                    logger.info(f"📥 Found {len(recent_actions)} recent actions")
+                    for action in recent_actions:
+                        if hasattr(action, 'agent') and hasattr(action, 'content'):
+                            agent_name = getattr(action.agent, 'name', 'Unknown')
+                            content = action.content
+                            if content and len(str(content).strip()) > 5:
+                                messages.append({
+                                    "speaker": agent_name,
+                                    "content": str(content),
+                                    "timestamp": datetime.datetime.now().isoformat()
+                                })
+                                logger.info(f"🎭 Added action from {agent_name}: {str(content)[:50]}...")
+            
+            # If no communications found, try alternative methods to get agent interactions
+            if len(messages) <= 1:  # Only system message
+                logger.info("🔍 No world communications found, trying individual agent extraction...")
                 for agent in agents:
                     # Get agent's current actions or thoughts
                     if hasattr(agent, 'episodic_memory') and agent.episodic_memory:
                         recent_memories = agent.episodic_memory.retrieve_all()[-3:]  # Get last 3 memories
                         for memory in recent_memories:
-                            if hasattr(memory, 'content') and memory.content:
+                            if hasattr(memory, 'content') and memory.content and len(str(memory.content)) > 10:
                                 messages.append({
                                     "speaker": agent.name,
-                                    "content": memory.content,
+                                    "content": str(memory.content),
                                     "timestamp": datetime.datetime.now().isoformat()
                                 })
+                                logger.info(f"📚 Added memory from {agent.name}: {str(memory.content)[:50]}...")
                     else:
                         # Fallback: generate a sample response
                         messages.append({
@@ -673,6 +819,7 @@ class TinyTroupeService:
                             "content": f"{agent.name}として議論に参加しています。",
                             "timestamp": datetime.datetime.now().isoformat()
                         })
+                        logger.info(f"📝 Added fallback message for {agent.name}")
                         
         except Exception as e:
             logger.error(f"Error extracting messages: {e}")
@@ -683,6 +830,7 @@ class TinyTroupeService:
                     "content": f"{agent.name}からの議論への参加です。",
                     "timestamp": datetime.datetime.now().isoformat()
                 })
+                logger.info(f"📝 Added fallback message for {agent.name} due to extraction error")
         
         return messages
     
@@ -735,6 +883,14 @@ class TinyTroupeService:
             建設的で多様な視点からの議論を行ってください。
             """
             
+            # Make all agents accessible to each other for conversation
+            try:
+                if hasattr(tiny_world, 'make_everyone_accessible'):
+                    tiny_world.make_everyone_accessible()
+                    logger.info("✅ Made all agents accessible to each other")
+            except Exception as e:
+                logger.warning(f"⚠️ Could not make agents accessible: {e}")
+            
             # Update progress
             stream_data["progress"] = 75
             stream_data["message"] = f"{len(agents)}人のエージェントが議論を開始..."
@@ -770,14 +926,63 @@ class TinyTroupeService:
                     logger.info(f"🗣️ Getting response from {agent.name}...")
                     stream_data["message"] = f"🗣️ {agent.name}が発言中... (AI処理中)"
                     
-                    response = agent.act(f"「{discussion.theme}」について、簡潔に意見を述べてください。")
-                    logger.info(f"📝 {agent.name} response: {str(response)[:100]}...")
+                    agent.listen_and_act(f"「{discussion.theme}」について、簡潔に意見を述べてください。")
+                    response = agent.pop_actions_and_get_contents_for("TALK", False)
+                    logger.info(f"📝 {agent.name} response: {response}...")
                     
-                    # Process the response
+                    # Try to extract actual conversation content from agent
+                    content = None
                     if response and str(response) != "None":
                         # Extract the actual content from the response
                         content = response.get('content', str(response)) if isinstance(response, dict) else str(response)
-                        
+                    else:
+                        # Try to get content from agent's recent actions or memory
+                        logger.info(f"🔍 Trying to extract content from {agent.name}'s memory or actions...")
+                        try:
+                            # First, try to get from the world's communication buffer (most recent)
+                            if hasattr(tiny_world, 'communication_buffer'):
+                                communications = getattr(tiny_world, 'communication_buffer', [])
+                                if communications:
+                                    # Get the most recent communication from this agent
+                                    for comm in reversed(communications[-10:]):  # Check last 10 communications
+                                        if hasattr(comm, 'source') and hasattr(comm, 'content'):
+                                            speaker_name = getattr(comm.source, 'name', '')
+                                            if speaker_name == agent.name:
+                                                comm_content = str(comm.content)
+                                                if comm_content and len(comm_content.strip()) > 10:
+                                                    content = comm_content
+                                                    logger.info(f"💬 Found recent communication from {agent.name}: {content[:50]}...")
+                                                    break
+                            
+                            # If no communication found, check agent's episodic memory
+                            if not content and hasattr(agent, 'episodic_memory') and agent.episodic_memory:
+                                recent_memories = agent.episodic_memory.retrieve_all()
+                                if recent_memories:
+                                    # Get the most recent memory that contains actual content
+                                    for memory in reversed(recent_memories[-5:]):  # Check last 5 memories
+                                        if hasattr(memory, 'content') and memory.content and len(str(memory.content)) > 10:
+                                            content = str(memory.content)
+                                            logger.info(f"📚 Found content from {agent.name}'s memory: {content[:50]}...")
+                                            break
+                            
+                            # If no memory content, try to get from agent's current state
+                            if not content and hasattr(agent, 'current_action'):
+                                current_action = getattr(agent, 'current_action', None)
+                                if current_action and str(current_action) != "None":
+                                    content = str(current_action)
+                                    logger.info(f"🎭 Found content from {agent.name}'s current action: {content[:50]}...")
+                            
+                            # If still no content, try to get from agent's last communication
+                            if not content and hasattr(agent, 'last_communication'):
+                                last_comm = getattr(agent, 'last_communication', None)
+                                if last_comm and str(last_comm) != "None":
+                                    content = str(last_comm)
+                                    logger.info(f"💬 Found content from {agent.name}'s last communication: {content[:50]}...")
+                                    
+                        except Exception as extract_error:
+                            logger.warning(f"⚠️ Error extracting content from {agent.name}: {extract_error}")
+                    
+                    if content and len(content.strip()) > 5:
                         # Stream: Agent completed response
                         stream_data["message"] = f"✅ {agent.name}が発言を完了しました"
                         await asyncio.sleep(0.2)

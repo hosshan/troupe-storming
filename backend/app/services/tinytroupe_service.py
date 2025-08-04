@@ -91,7 +91,6 @@ class TinyTroupeService:
             
             基本情報:
             - 名前: {character.name}
-            - 説明: {character.description}
             - 性格: {character.personality}
             - 背景: {character.background}
             
@@ -377,13 +376,7 @@ class TinyTroupeService:
             ]
             
             # Set up the discussion topic in the world
-            discussion_prompt = f"""
-            議論テーマ: {discussion.theme}
-            詳細: {discussion.description}
-            
-            各エージェントは自分の性格と背景に基づいて、このテーマについて意見を述べてください。
-            建設的で多様な視点からの議論を行ってください。
-            """
+            discussion_prompt = f"議論テーマ: {discussion.theme}"
             tiny_world.make_everyone_accessible()
             # Have each agent think about and respond to the topic
             logger.info("💭 Starting agent discussions...")
@@ -393,12 +386,16 @@ class TinyTroupeService:
                     
                     # Make the agent think about the topic
                     logger.info(f"🧠 Making {agent.name} think about the topic...")
-                    think_result = agent.think(discussion_prompt)
-                    logger.info(f"💡 {agent.name} thinking result: {str(think_result)[:100]}...")
+                    try:
+                        think_result = agent.think(discussion_prompt)
+                        logger.info(f"💡 {agent.name} thinking completed")
+                    except Exception as think_error:
+                        logger.warning(f"⚠️ Thinking failed for {agent.name}: {think_error}")
+                        # Continue without thinking step
                     
                     # Get the agent's response
                     logger.info(f"🗣️ Getting response from {agent.name}...")
-                    response = agent.act(f"「{discussion.theme}」について、あなたの意見を2-3文で述べてください。")
+                    response = agent.act(f"「{discussion.theme}」について、簡潔に意見を述べてください。")
                     logger.info(f"📝 {agent.name} response: {str(response)[:100]}...")
                     
                     if response:
@@ -433,6 +430,13 @@ class TinyTroupeService:
                         messages.append({
                             "speaker": agent.name,
                             "content": f"{agent.name}として、「{discussion.theme}」について考えています...（API制限により詳細な応答ができません）",
+                            "timestamp": datetime.datetime.now().isoformat()
+                        })
+                    elif "length" in error_str or "token" in error_str:
+                        logger.warning(f"OpenAI API token limit exceeded for {agent.name}, using fallback response")
+                        messages.append({
+                            "speaker": agent.name,
+                            "content": f"{agent.name}として、「{discussion.theme}」について考えています...（トークン制限により詳細な応答ができません）",
                             "timestamp": datetime.datetime.now().isoformat()
                         })
                     else:
@@ -751,8 +755,12 @@ class TinyTroupeService:
                     
                     # Make the agent think about the topic
                     logger.info(f"🧠 Making {agent.name} think about the topic...")
-                    think_result = agent.think(discussion_prompt)
-                    logger.info(f"💡 {agent.name} thinking result: {str(think_result)[:100]}...")
+                    try:
+                        think_result = agent.think(discussion_prompt)
+                        logger.info(f"💡 {agent.name} thinking completed")
+                    except Exception as think_error:
+                        logger.warning(f"⚠️ Thinking failed for {agent.name}: {think_error}")
+                        # Continue without thinking step
                     
                     # Stream: Agent preparing response
                     stream_data["message"] = f"💭 {agent.name}が意見をまとめています..."
@@ -762,7 +770,7 @@ class TinyTroupeService:
                     logger.info(f"🗣️ Getting response from {agent.name}...")
                     stream_data["message"] = f"🗣️ {agent.name}が発言中... (AI処理中)"
                     
-                    response = agent.act(f"「{discussion.theme}」について、あなたの意見を2-3文で述べてください。")
+                    response = agent.act(f"「{discussion.theme}」について、簡潔に意見を述べてください。")
                     logger.info(f"📝 {agent.name} response: {str(response)[:100]}...")
                     
                     # Process the response
@@ -809,12 +817,22 @@ class TinyTroupeService:
                     
                 except Exception as agent_error:
                     logger.error(f"❌ Error getting response from agent {agent.name}: {agent_error}")
-                    # Add a fallback response for this agent
-                    fallback_message = {
-                        "speaker": agent.name,
-                        "content": f"{agent.name}として、「{discussion.theme}」について考えています...（エラーが発生しました）",
-                        "timestamp": datetime.datetime.now().isoformat()
-                    }
+                    # Check if it's a token limit error
+                    error_str = str(agent_error).lower()
+                    if "length" in error_str or "token" in error_str:
+                        logger.warning(f"OpenAI API token limit exceeded for {agent.name}, using fallback response")
+                        fallback_message = {
+                            "speaker": agent.name,
+                            "content": f"{agent.name}として、「{discussion.theme}」について考えています...（トークン制限により詳細な応答ができません）",
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
+                    else:
+                        # Add a fallback response for this agent
+                        fallback_message = {
+                            "speaker": agent.name,
+                            "content": f"{agent.name}として、「{discussion.theme}」について考えています...（エラーが発生しました）",
+                            "timestamp": datetime.datetime.now().isoformat()
+                        }
                     messages.append(fallback_message)
                     stream_data["messages"] = messages.copy()
             

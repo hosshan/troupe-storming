@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.orm import Session
 from typing import List, AsyncGenerator
@@ -10,6 +10,10 @@ from app.models import models, schemas
 from app.services.tinytroupe_service import TinyTroupeService
 
 router = APIRouter(prefix="/discussions", tags=["discussions"])
+
+# Global dictionary to store discussion streams and active connections
+discussion_streams = {}
+active_connections = {}
 
 @router.post("/", response_model=schemas.Discussion)
 def create_discussion(discussion: schemas.DiscussionCreate, db: Session = Depends(get_db)):
@@ -60,9 +64,6 @@ async def run_discussion_background(discussion_id: int, db: Session):
     discussion.result = result
     db.commit()
 
-# Global dictionary to store discussion streams
-discussion_streams = {}
-
 @router.post("/{discussion_id}/start")
 async def start_discussion(discussion_id: int, background_tasks: BackgroundTasks, db: Session = Depends(get_db)):
     discussion = db.query(models.Discussion).filter(models.Discussion.id == discussion_id).first()
@@ -109,7 +110,8 @@ async def run_discussion_with_streaming(discussion_id: int, db: Session):
         "messages": [],
         "progress": 0,
         "completed": False,
-        "error": None
+        "error": None,
+        "start_time": time.time()
     }
     discussion_streams[discussion_id] = stream_data
     
@@ -172,64 +174,94 @@ async def run_discussion_with_streaming(discussion_id: int, db: Session):
     
     finally:
         stream_data["completed"] = True
+        # Clean up after a delay to allow final message to be sent
+        asyncio.create_task(cleanup_discussion_stream(discussion_id, delay=5))
 
-async def discussion_event_generator(discussion_id: int) -> AsyncGenerator[str, None]:
+async def cleanup_discussion_stream(discussion_id: int, delay: int = 5):
+    """Clean up discussion stream after delay"""
+    await asyncio.sleep(delay)
+    if discussion_id in discussion_streams:
+        del discussion_streams[discussion_id]
+    if discussion_id in active_connections:
+        del active_connections[discussion_id]
+
+async def discussion_event_generator(discussion_id: int, request: Request) -> AsyncGenerator[str, None]:
     """Generate Server-Sent Events for discussion progress"""
     
-    # Wait for stream to be initialized
-    max_wait = 30  # 30 seconds timeout
-    wait_count = 0
-    while discussion_id not in discussion_streams and wait_count < max_wait:
-        await asyncio.sleep(1)
-        wait_count += 1
+    # Track this connection
+    active_connections[discussion_id] = True
     
-    if discussion_id not in discussion_streams:
-        yield f"data: {json.dumps({'error': 'Discussion stream not found', 'completed': True})}\n\n"
-        return
-    
-    stream_data = discussion_streams[discussion_id]
-    last_message_count = 0
-    
-    while not stream_data["completed"]:
-        current_data = {
+    try:
+        # Wait for stream to be initialized with timeout
+        max_wait = 30  # 30 seconds timeout
+        wait_count = 0
+        while discussion_id not in discussion_streams and wait_count < max_wait:
+            # Check if client disconnected
+            if await request.is_disconnected():
+                return
+            await asyncio.sleep(1)
+            wait_count += 1
+        
+        if discussion_id not in discussion_streams:
+            yield f"data: {json.dumps({'error': 'Discussion stream not found', 'completed': True})}\n\n"
+            return
+        
+        stream_data = discussion_streams[discussion_id]
+        last_message_count = 0
+        last_progress = -1
+        max_duration = 300  # 5 minutes max duration
+        
+        while not stream_data["completed"]:
+            # Check if client disconnected
+            if await request.is_disconnected():
+                break
+            
+            # Check for timeout
+            if time.time() - stream_data["start_time"] > max_duration:
+                stream_data["error"] = "Discussion timeout"
+                stream_data["completed"] = True
+                break
+            
+            current_data = {
+                "progress": stream_data["progress"],
+                "message": stream_data.get("message", ""),
+                "completed": stream_data["completed"],
+                "messages": stream_data["messages"]
+            }
+            
+            if stream_data["error"]:
+                current_data["error"] = stream_data["error"]
+            
+            # Only send update if there's new data
+            if (len(stream_data["messages"]) != last_message_count or 
+                stream_data["progress"] != last_progress):
+                
+                yield f"data: {json.dumps(current_data)}\n\n"
+                last_message_count = len(stream_data["messages"])
+                last_progress = stream_data["progress"]
+            
+            await asyncio.sleep(1)  # Check every second
+        
+        # Send final update
+        final_data = {
             "progress": stream_data["progress"],
             "message": stream_data.get("message", ""),
-            "completed": stream_data["completed"],
+            "completed": True,
             "messages": stream_data["messages"]
         }
         
         if stream_data["error"]:
-            current_data["error"] = stream_data["error"]
+            final_data["error"] = stream_data["error"]
         
-        # Only send update if there's new data
-        if (len(stream_data["messages"]) != last_message_count or 
-            stream_data["progress"] != current_data.get("last_progress", -1)):
-            
-            yield f"data: {json.dumps(current_data)}\n\n"
-            last_message_count = len(stream_data["messages"])
-            current_data["last_progress"] = stream_data["progress"]
+        yield f"data: {json.dumps(final_data)}\n\n"
         
-        await asyncio.sleep(1)  # Check every second
-    
-    # Send final update
-    final_data = {
-        "progress": stream_data["progress"],
-        "message": stream_data.get("message", ""),
-        "completed": True,
-        "messages": stream_data["messages"]
-    }
-    
-    if stream_data["error"]:
-        final_data["error"] = stream_data["error"]
-    
-    yield f"data: {json.dumps(final_data)}\n\n"
-    
-    # Clean up
-    if discussion_id in discussion_streams:
-        del discussion_streams[discussion_id]
+    finally:
+        # Clean up connection tracking
+        if discussion_id in active_connections:
+            del active_connections[discussion_id]
 
 @router.get("/{discussion_id}/stream")
-async def stream_discussion_progress(discussion_id: int, db: Session = Depends(get_db)):
+async def stream_discussion_progress(discussion_id: int, request: Request, db: Session = Depends(get_db)):
     """Stream discussion progress using Server-Sent Events"""
     discussion = db.query(models.Discussion).filter(models.Discussion.id == discussion_id).first()
     if not discussion:
@@ -249,7 +281,8 @@ async def stream_discussion_progress(discussion_id: int, db: Session = Depends(g
             "progress": 100,
             "completed": True,
             "error": None,
-            "message": "議論が完了しました"
+            "message": "議論が完了しました",
+            "start_time": time.time()
         }
         discussion_streams[discussion_id] = stream_data
     elif discussion.status == "running":
@@ -261,12 +294,13 @@ async def stream_discussion_progress(discussion_id: int, db: Session = Depends(g
                 "progress": 50,
                 "completed": False,
                 "error": None,
-                "message": "議論を実行中です..."
+                "message": "議論を実行中です...",
+                "start_time": time.time()
             }
             discussion_streams[discussion_id] = stream_data
     
     return StreamingResponse(
-        discussion_event_generator(discussion_id),
+        discussion_event_generator(discussion_id, request),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -275,3 +309,15 @@ async def stream_discussion_progress(discussion_id: int, db: Session = Depends(g
             "Access-Control-Allow-Headers": "*",
         }
     )
+
+@router.delete("/{discussion_id}/stream")
+async def stop_discussion_stream(discussion_id: int):
+    """Stop and cleanup discussion stream"""
+    if discussion_id in discussion_streams:
+        discussion_streams[discussion_id]["completed"] = True
+        discussion_streams[discussion_id]["error"] = "Stream stopped by user"
+    
+    if discussion_id in active_connections:
+        del active_connections[discussion_id]
+    
+    return {"message": "Discussion stream stopped"}

@@ -51,6 +51,26 @@ class TinyTroupeService:
         # Log overall service status
         logger.info(f"TinyTroupeService initialized - TinyTroupe: {self.tinytroupe_available}, OpenAI: {self.openai_available}, API Key: {bool(self.api_key)}")
     
+    def _create_system_message(self, discussion) -> dict:
+        """議論開始システムメッセージを生成"""
+        return {
+            "speaker": "システム",
+            "content": f"議論テーマ「{discussion.theme}」について話し合いを開始します。",
+            "timestamp": datetime.datetime.now().isoformat()
+        }
+    
+    def _create_discussion_response(self, discussion, world, characters, messages, note, status="completed") -> dict:
+        """共通の議論レスポンス形式を生成"""
+        return {
+            "discussion_id": discussion.id,
+            "theme": discussion.theme,
+            "world": world.name,
+            "participants": [char.name for char in characters],
+            "messages": messages,
+            "status": status,
+            "note": note
+        }
+    
     def create_agent_from_character(self, character: Character) -> Optional[Any]:
         """Create a TinyPerson agent from a Character model."""
         if not self.tinytroupe_available:
@@ -150,40 +170,92 @@ class TinyTroupeService:
             logger.error(f"📋 Full traceback: {traceback.format_exc()}")
             return None, []
     
-    async def run_discussion(self, discussion: Discussion, characters: List[Character], world: World) -> Dict[str, Any]:
-        """Run a discussion simulation using TinyTroupe or fallback methods."""
+    async def run_discussion(self, discussion: Discussion, characters: List[Character], world: World, stream_data=None) -> Dict[str, Any]:
+        """Run a discussion simulation using TinyTroupe or fallback methods with optional streaming support."""
         logger.info(f"=== STARTING DISCUSSION: {discussion.theme} ===")
         logger.info(f"TinyTroupe available: {self.tinytroupe_available}")
         logger.info(f"OpenAI available: {self.openai_available}")
         logger.info(f"API key present: {bool(self.api_key)}")
         logger.info(f"Number of characters: {len(characters)}")
+        logger.info(f"Streaming mode: {stream_data is not None}")
         
         try:
-            # First try TinyTroupe if available
-            if self.tinytroupe_available and self.api_key:
-                logger.info("🚀 USING TINYTROUPE for discussion generation")
-                result = await self._create_tinytroupe_discussion_result(discussion, characters, world)
-                logger.info("✅ TinyTroupe discussion completed successfully")
-                return result
-            # Fall back to OpenAI direct if available
-            elif self.openai_available and self.api_key:
-                logger.warning("⚠️ FALLING BACK to OpenAI direct API (TinyTroupe not available)")
-                result = await self._create_ai_discussion_result(discussion, characters, world)
-                logger.info("✅ OpenAI direct discussion completed")
-                return result
-            else:
-                # Fall back to mock result
-                logger.warning("⚠️ FALLING BACK to mock data (no AI available)")
-                result = self._create_mock_discussion_result(discussion, characters, world)
-                logger.info("✅ Mock discussion completed")
-                return result
+            # Use unified provider selection logic
+            providers = ['tinytroupe', 'openai', 'mock']
+            
+            for provider in providers:
+                try:
+                    if provider == 'tinytroupe' and self.tinytroupe_available and self.api_key:
+                        logger.info("🚀 USING TINYTROUPE for discussion generation")
+                        result = await self._create_discussion_result(
+                            'tinytroupe', discussion, characters, world, stream_data
+                        )
+                        logger.info("✅ TinyTroupe discussion completed successfully")
+                        return result
+                    elif provider == 'openai' and self.openai_available and self.api_key:
+                        logger.warning("⚠️ FALLING BACK to OpenAI direct API")
+                        result = await self._create_discussion_result(
+                            'openai', discussion, characters, world, stream_data
+                        )
+                        logger.info("✅ OpenAI direct discussion completed")
+                        return result
+                    elif provider == 'mock':
+                        logger.warning("⚠️ FALLING BACK to mock data (no AI available)")
+                        result = await self._create_discussion_result(
+                            'mock', discussion, characters, world, stream_data
+                        )
+                        logger.info("✅ Mock discussion completed")
+                        return result
+                except Exception as provider_error:
+                    logger.warning(f"{provider} provider failed: {provider_error}")
+                    continue
+            
+            # If we get here, all providers failed
+            raise Exception("All discussion providers failed")
                 
         except Exception as e:
             logger.error(f"❌ Error in run_discussion: {e}")
+            if stream_data:
+                stream_data["error"] = str(e)
             return {
                 "error": str(e),
                 "status": "failed"
             }
+    
+    async def _create_discussion_result(self, provider: str, discussion, characters, world, stream_data=None):
+        """統合された議論生成メソッド（ストリーミング対応）"""
+        # 共通処理
+        messages = [self._create_system_message(discussion)]
+        if stream_data:
+            stream_data["messages"] = messages
+        
+        if provider == 'tinytroupe':
+            if stream_data:
+                return await self._create_tinytroupe_streaming_discussion_result(
+                    discussion, characters, world, stream_data
+                )
+            else:
+                return await self._create_tinytroupe_discussion_result(
+                    discussion, characters, world
+                )
+        elif provider == 'openai':
+            if stream_data:
+                return await self._create_ai_streaming_discussion_result(
+                    discussion, characters, world, stream_data
+                )
+            else:
+                return await self._create_ai_discussion_result(
+                    discussion, characters, world
+                )
+        else:  # mock
+            if stream_data:
+                return await self._create_mock_streaming_discussion_result(
+                    discussion, characters, world, stream_data
+                )
+            else:
+                return self._create_mock_discussion_result(
+                    discussion, characters, world
+                )
     
     async def _create_tinytroupe_discussion_result(self, discussion: Discussion, characters: List[Character], world: World) -> Dict[str, Any]:
         """Create a discussion using actual TinyTroupe library."""
@@ -292,6 +364,7 @@ class TinyTroupeService:
             # Try to get any additional world interactions
             logger.info("🌍 Running world simulation...")
             try:
+                tiny_world.make_everyone_accessible()
                 # Run a brief world simulation if possible
                 logger.info("⚙️ Executing tiny_world.run(1)...")
                 tiny_world.run(1)  # Run for 1 step
@@ -307,15 +380,10 @@ class TinyTroupeService:
             except Exception as world_error:
                 logger.warning(f"⚠️ World simulation step failed: {world_error}")
             
-            return {
-                "discussion_id": discussion.id,
-                "theme": discussion.theme,
-                "world": world.name,
-                "participants": [char.name for char in characters],
-                "messages": messages,
-                "status": "completed",
-                "note": "Real TinyTroupe discussion with AI agents"
-            }
+            return self._create_discussion_response(
+                discussion, world, characters, messages, 
+                "Real TinyTroupe discussion with AI agents"
+            )
             
         except Exception as e:
             logger.error(f"Error in TinyTroupe discussion generation: {e}")
@@ -336,13 +404,7 @@ class TinyTroupeService:
         try:
             client = openai.OpenAI(api_key=self.api_key)
             
-            messages = [
-                {
-                    "speaker": "システム",
-                    "content": f"議論テーマ「{discussion.theme}」について話し合いを開始します。",
-                    "timestamp": datetime.datetime.now().isoformat()
-                }
-            ]
+            messages = [self._create_system_message(discussion)]
             
             # Generate discussion for each character
             for character in characters:
@@ -408,15 +470,10 @@ class TinyTroupeService:
                         "timestamp": datetime.datetime.now().isoformat()
                     })
             
-            return {
-                "discussion_id": discussion.id,
-                "theme": discussion.theme,
-                "world": world.name,
-                "participants": [char.name for char in characters],
-                "messages": messages,
-                "status": "completed",
-                "note": "AI-powered discussion using OpenAI GPT-4o (with fallback handling)"
-            }
+            return self._create_discussion_response(
+                discussion, world, characters, messages,
+                "AI-powered discussion using OpenAI GPT-4o (with fallback handling)"
+            )
             
         except Exception as e:
             logger.error(f"Error in AI discussion generation: {e}")
@@ -433,13 +490,7 @@ class TinyTroupeService:
     def _create_mock_discussion_result(self, discussion: Discussion, characters: List[Character], world: World, reason: str = "Mock result - TinyTroupe not available (Pydantic compatibility issue)") -> Dict[str, Any]:
         """Create a mock discussion result when TinyTroupe is not available."""
         
-        messages = [
-            {
-                "speaker": "システム",
-                "content": f"議論テーマ「{discussion.theme}」について話し合いを開始します。",
-                "timestamp": datetime.datetime.now().isoformat()
-            }
-        ]
+        messages = [self._create_system_message(discussion)]
         
         # Generate more realistic mock discussion
         for i, character in enumerate(characters):
@@ -457,15 +508,9 @@ class TinyTroupeService:
                         "timestamp": datetime.datetime.now().isoformat()
                     })
         
-        return {
-            "discussion_id": discussion.id,
-            "theme": discussion.theme,
-            "world": world.name,
-            "participants": [char.name for char in characters],
-            "messages": messages,
-            "status": "completed",
-            "note": reason
-        }
+        return self._create_discussion_response(
+            discussion, world, characters, messages, reason
+        )
     
     def _generate_mock_opinion(self, character: Character, theme: str) -> str:
         """Generate a mock opinion based on character traits."""
@@ -557,41 +602,8 @@ class TinyTroupeService:
         return messages
     
     async def run_discussion_with_streaming(self, discussion, characters, world, stream_data):
-        """Run discussion with real-time streaming updates to stream_data"""
-        logger.info(f"=== STARTING STREAMING DISCUSSION: {discussion.theme} ===")
-        
-        try:
-            # First try TinyTroupe if available
-            if self.tinytroupe_available and self.api_key:
-                logger.info("🚀 USING TINYTROUPE for streaming discussion generation")
-                result = await self._create_tinytroupe_streaming_discussion_result(
-                    discussion, characters, world, stream_data
-                )
-                logger.info("✅ TinyTroupe streaming discussion completed successfully")
-                return result
-            # Fall back to OpenAI direct if available
-            elif self.openai_available and self.api_key:
-                logger.warning("⚠️ FALLING BACK to OpenAI direct API with streaming")
-                result = await self._create_ai_streaming_discussion_result(
-                    discussion, characters, world, stream_data
-                )
-                logger.info("✅ OpenAI direct streaming discussion completed")
-                return result
-            else:
-                logger.warning("⚠️ FALLING BACK to mock data with streaming")
-                result = await self._create_mock_streaming_discussion_result(
-                    discussion, characters, world, stream_data
-                )
-                logger.info("✅ Mock streaming discussion completed")
-                return result
-                
-        except Exception as e:
-            logger.error(f"❌ Error in run_discussion_with_streaming: {e}")
-            stream_data["error"] = str(e)
-            return {
-                "error": str(e),
-                "status": "failed"
-            }
+        """Run discussion with real-time streaming updates to stream_data (legacy method - calls unified run_discussion)"""
+        return await self.run_discussion(discussion, characters, world, stream_data)
     
     async def _create_tinytroupe_streaming_discussion_result(self, discussion, characters, world, stream_data):
         """Create a discussion using TinyTroupe with real-time streaming"""
@@ -703,15 +715,10 @@ class TinyTroupeService:
                     messages.append(fallback_message)
                     stream_data["messages"] = messages.copy()
             
-            return {
-                "discussion_id": discussion.id,
-                "theme": discussion.theme,
-                "world": world.name,
-                "participants": [char.name for char in characters],
-                "messages": messages,
-                "status": "completed",
-                "note": "Real TinyTroupe streaming discussion with AI agents"
-            }
+            return self._create_discussion_response(
+                discussion, world, characters, messages,
+                "Real TinyTroupe streaming discussion with AI agents"
+            )
             
         except Exception as e:
             logger.error(f"Error in TinyTroupe streaming discussion generation: {e}")
@@ -731,13 +738,7 @@ class TinyTroupeService:
         try:
             client = openai.OpenAI(api_key=self.api_key)
             
-            messages = [
-                {
-                    "speaker": "システム",
-                    "content": f"議論テーマ「{discussion.theme}」について話し合いを開始します。",
-                    "timestamp": datetime.datetime.now().isoformat()
-                }
-            ]
+            messages = [self._create_system_message(discussion)]
             stream_data["messages"] = messages
             
             # Generate discussion for each character with streaming
@@ -800,15 +801,10 @@ class TinyTroupeService:
                 # Small delay between characters
                 await asyncio.sleep(0.5)
             
-            return {
-                "discussion_id": discussion.id,
-                "theme": discussion.theme,
-                "world": world.name,
-                "participants": [char.name for char in characters],
-                "messages": messages,
-                "status": "completed",
-                "note": "AI-powered streaming discussion using OpenAI GPT-4o-mini"
-            }
+            return self._create_discussion_response(
+                discussion, world, characters, messages,
+                "AI-powered streaming discussion using OpenAI GPT-4o-mini"
+            )
             
         except Exception as e:
             logger.error(f"Error in AI streaming discussion generation: {e}")
@@ -817,13 +813,7 @@ class TinyTroupeService:
     async def _create_mock_streaming_discussion_result(self, discussion, characters, world, stream_data):
         """Create a mock discussion with streaming updates"""
         
-        messages = [
-            {
-                "speaker": "システム",
-                "content": f"議論テーマ「{discussion.theme}」について話し合いを開始します。",
-                "timestamp": datetime.datetime.now().isoformat()
-            }
-        ]
+        messages = [self._create_system_message(discussion)]
         stream_data["messages"] = messages
         
         # Generate streaming mock discussion
@@ -852,15 +842,10 @@ class TinyTroupeService:
                     # Small delay to simulate real conversation
                     await asyncio.sleep(1)
         
-        return {
-            "discussion_id": discussion.id,
-            "theme": discussion.theme,
-            "world": world.name,
-            "participants": [char.name for char in characters],
-            "messages": messages,
-            "status": "completed",
-            "note": "Mock streaming discussion - TinyTroupe not available or API issues"
-        }
+        return self._create_discussion_response(
+            discussion, world, characters, messages,
+            "Mock streaming discussion - TinyTroupe not available or API issues"
+        )
     
     def validate_character_config(self, config: Dict[str, Any]) -> bool:
         """Validate character configuration."""

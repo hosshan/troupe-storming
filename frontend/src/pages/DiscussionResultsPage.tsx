@@ -1,25 +1,16 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
-  Box,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  Breadcrumbs,
-  Link,
-  Paper,
-  List,
-  ListItem,
-  ListItemText,
-  LinearProgress,
-  Chip,
-  CircularProgress,
-  Alert,
-} from "@mui/material";
-import {
-  ArrowBack as ArrowBackIcon,
-  Refresh as RefreshIcon,
-} from "@mui/icons-material";
+  ArrowLeft,
+  RefreshCw,
+  Loader2,
+  AlertCircle,
+  Play,
+} from "lucide-react";
+import { Button } from "../components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "../components/ui/card";
+import { Progress } from "../components/ui/progress";
+import { Badge } from "../components/ui/badge";
+import { Alert, AlertDescription } from "../components/ui/alert";
 import { useNavigate, useParams } from "react-router-dom";
 import { Discussion, World, Character } from "../types";
 import { discussionsApi, worldsApi, charactersApi } from "../services/api";
@@ -382,15 +373,15 @@ const DiscussionResultsPage: React.FC = () => {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "pending":
-        return "default";
+        return "secondary";
       case "running":
-        return "warning";
-      case "completed":
-        return "success";
-      case "failed":
-        return "error";
-      default:
         return "default";
+      case "completed":
+        return "default";
+      case "failed":
+        return "destructive";
+      default:
+        return "secondary";
     }
   };
 
@@ -411,110 +402,107 @@ const DiscussionResultsPage: React.FC = () => {
 
   if (loading) {
     return (
-      <Box
-        display="flex"
-        justifyContent="center"
-        alignItems="center"
-        minHeight="400px"
-      >
-        <CircularProgress />
-      </Box>
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2 text-lg">Loading...</span>
+      </div>
     );
   }
 
   return (
-    <Box>
-      <Box mb={2}>
-        <Breadcrumbs>
-          <Link
-            component="button"
-            variant="body1"
-            onClick={() => navigate("/worlds")}
-            sx={{ textDecoration: "none" }}
-          >
-            世界管理
-          </Link>
-          <Link
-            component="button"
-            variant="body1"
-            onClick={() => navigate(`/discussions/${worldId}`)}
-            sx={{ textDecoration: "none" }}
-          >
-            {world?.name} - 議論管理
-          </Link>
-          <Typography color="text.primary">
+    <div className="container mx-auto py-8 px-4 max-w-7xl">
+      <nav className="mb-6">
+        <ol className="flex items-center space-x-2 text-sm text-muted-foreground">
+          <li>
+            <button
+              onClick={() => navigate("/worlds")}
+              className="hover:text-foreground transition-colors"
+            >
+              世界管理
+            </button>
+          </li>
+          <li>/</li>
+          <li>
+            <button
+              onClick={() => navigate(`/discussions/${worldId}`)}
+              className="hover:text-foreground transition-colors"
+            >
+              {world?.name} - 議論管理
+            </button>
+          </li>
+          <li>/</li>
+          <li className="text-foreground font-medium">
             議論結果: {discussion?.theme}
-          </Typography>
-        </Breadcrumbs>
-      </Box>
+          </li>
+        </ol>
+      </nav>
 
-      <Box
-        display="flex"
-        justifyContent="space-between"
-        alignItems="center"
-        mb={3}
-      >
-        <Typography variant="h4" component="h1">
-          議論結果
-        </Typography>
-        <Box>
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">議論結果</h1>
+          <p className="text-muted-foreground">キャラクターたちの議論の結果をリアルタイムで確認できます。</p>
+        </div>
+        <div className="flex gap-2">
           <Button
-            startIcon={<RefreshIcon />}
+            variant="outline"
             onClick={refreshDiscussion}
-            sx={{ mr: 1 }}
             disabled={discussionRunning}
+            className="gap-2"
           >
+            <RefreshCw className="h-4 w-4" />
             更新
           </Button>
           <Button
-            startIcon={<ArrowBackIcon />}
+            variant="outline"
             onClick={() => navigate(`/discussions/${worldId}`)}
+            className="gap-2"
           >
+            <ArrowLeft className="h-4 w-4" />
             議論一覧に戻る
           </Button>
-        </Box>
-      </Box>
+        </div>
+      </div>
 
       {discussion && (
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Box
-              display="flex"
-              justifyContent="space-between"
-              alignItems="center"
-              mb={2}
-            >
-              <Typography variant="h5">{discussion.theme}</Typography>
-              <Chip
-                label={getStatusText(discussion.status)}
-                color={getStatusColor(discussion.status)}
-              />
-            </Box>
-            <Typography variant="body1" color="text.secondary" gutterBottom>
+        <Card className="mb-6">
+          <CardHeader>
+            <div className="flex justify-between items-start gap-3">
+              <div className="flex-1 min-w-0">
+                <CardTitle className="text-2xl">{discussion.theme}</CardTitle>
+              </div>
+              <div className="flex-shrink-0">
+                <Badge variant={getStatusColor(discussion.status)} className="whitespace-nowrap">
+                  {getStatusText(discussion.status)}
+                </Badge>
+              </div>
+            </div>
+            <CardDescription className="mt-2">
               {discussion.description}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              参加キャラクター: {characters.map((c) => c.name).join(", ")}
-            </Typography>
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <p className="text-sm text-muted-foreground mb-4">
+              <span className="font-medium">参加キャラクター:</span> {characters.map((c) => c.name).join(", ")}
+            </p>
 
             {discussion.status === "pending" && (
               <Button
-                variant="contained"
                 onClick={startDiscussion}
-                sx={{ mt: 2 }}
                 disabled={loading}
+                className="gap-2"
               >
+                <Play className="h-4 w-4" />
                 {loading ? "議論開始中..." : "議論を開始"}
               </Button>
             )}
 
             {discussion.status === "failed" && (
               <Button
-                variant="contained"
                 onClick={startDiscussion}
-                sx={{ mt: 2 }}
                 disabled={loading}
+                className="gap-2"
               >
+                <Play className="h-4 w-4" />
                 {loading ? "再実行中..." : "再実行"}
               </Button>
             )}
@@ -523,95 +511,74 @@ const DiscussionResultsPage: React.FC = () => {
       )}
 
       {error && (
-        <Alert severity="error" sx={{ mb: 3 }}>
-          {error}
+        <Alert variant="destructive" className="mb-6">
+          <AlertCircle className="h-4 w-4" />
+          <AlertDescription>
+            {error}
+          </AlertDescription>
         </Alert>
       )}
 
       {discussionRunning && (
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Box display="flex" alignItems="center" mb={2}>
-              <CircularProgress size={24} sx={{ mr: 2 }} />
-              <Typography variant="h6">議論実行中...</Typography>
-            </Box>
-            <LinearProgress
-              variant="determinate"
-              value={progress}
-              sx={{ mb: 2 }}
-            />
-            <Typography variant="body2" color="text.secondary">
+        <Card className="mb-6">
+          <CardContent className="pt-6">
+            <div className="flex items-center gap-2 mb-4">
+              <Loader2 className="h-5 w-5 animate-spin" />
+              <h3 className="text-lg font-semibold">議論実行中...</h3>
+            </div>
+            <Progress value={progress} className="mb-3" />
+            <p className="text-sm text-muted-foreground">
               {progressMessage}
-            </Typography>
+            </p>
           </CardContent>
         </Card>
       )}
 
-      <Paper sx={{ p: 2 }}>
-        <Typography variant="h6" gutterBottom>
-          議論の流れ
-        </Typography>
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-xl">議論の流れ</CardTitle>
+        </CardHeader>
+        <CardContent>
+          {messages.length === 0 && !discussionRunning && (
+            <div className="text-center py-8 text-muted-foreground">
+              まだ議論が開始されていません
+            </div>
+          )}
 
-        {messages.length === 0 && !discussionRunning && (
-          <Typography color="text.secondary" textAlign="center" py={4}>
-            まだ議論が開始されていません
-          </Typography>
-        )}
-
-        <List sx={{ maxHeight: "600px", overflow: "auto" }}>
-          {messages.map((message, index) => (
-            <ListItem
-              key={index}
-              sx={{
-                borderLeft:
+          <div className="max-h-[600px] overflow-auto space-y-3">
+            {messages.map((message, index) => (
+              <div
+                key={index}
+                className={`p-4 rounded-lg border-l-4 ${
                   message.speaker === "システム"
-                    ? "4px solid #2196f3"
-                    : "4px solid #4caf50",
-                mb: 1,
-                backgroundColor:
-                  message.speaker === "システム" ? "#f5f5f5" : "transparent",
-              }}
-            >
-              <ListItemText
-                primary={
-                  <Box display="flex" alignItems="center" gap={1}>
-                    <Typography
-                      variant="subtitle2"
-                      component="span"
-                      fontWeight="bold"
-                    >
-                      {message.speaker}
-                    </Typography>
-                    <Typography
-                      variant="caption"
-                      color="text.secondary"
-                      component="span"
-                    >
-                      {new Date(message.timestamp).toLocaleTimeString("ja-JP")}
-                    </Typography>
-                  </Box>
-                }
-                secondary={
-                  <Typography
-                    variant="body2"
-                    sx={{ mt: 0.5, whiteSpace: "pre-wrap" }}
-                  >
-                    {message.content}
-                  </Typography>
-                }
-              />
-            </ListItem>
-          ))}
-          <div ref={messagesEndRef} />
-        </List>
+                    ? "border-l-blue-500 bg-blue-50/50"
+                    : "border-l-green-500 bg-green-50/50"
+                }`}
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="font-semibold text-sm">
+                    {message.speaker}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {new Date(message.timestamp).toLocaleTimeString("ja-JP")}
+                  </span>
+                </div>
+                <p className="text-sm whitespace-pre-wrap leading-relaxed">
+                  {message.content}
+                </p>
+              </div>
+            ))}
+            <div ref={messagesEndRef} />
+          </div>
 
-        {discussionRunning && messages.length === 0 && (
-          <Box display="flex" justifyContent="center" py={4}>
-            <CircularProgress />
-          </Box>
-        )}
-      </Paper>
-    </Box>
+          {discussionRunning && messages.length === 0 && (
+            <div className="flex justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

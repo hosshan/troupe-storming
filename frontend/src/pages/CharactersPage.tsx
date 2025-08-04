@@ -1,22 +1,17 @@
 import React, { useState, useEffect } from 'react';
 import {
-  Box,
-  Typography,
-  Button,
-  Card,
-  CardContent,
-  CardActions,
-  Grid,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions,
-  TextField,
-  Fab,
-  Breadcrumbs,
-  Link,
-} from '@mui/material';
-import { Add as AddIcon, Edit as EditIcon, Delete as DeleteIcon, ArrowBack as ArrowBackIcon } from '@mui/icons-material';
+  Plus,
+  Edit,
+  Trash2,
+  ArrowLeft,
+  Loader2,
+} from 'lucide-react';
+import { Button } from '../components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '../components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '../components/ui/dialog';
+import { Input } from '../components/ui/input';
+import { Textarea } from '../components/ui/textarea';
+import { Label } from '../components/ui/label';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Character, World, CreateCharacterRequest } from '../types';
 import { charactersApi, worldsApi } from '../services/api';
@@ -120,158 +115,174 @@ const CharactersPage: React.FC = () => {
   };
 
   if (loading) {
-    return <Typography>Loading...</Typography>;
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <Loader2 className="h-8 w-8 animate-spin" />
+        <span className="ml-2 text-lg">Loading...</span>
+      </div>
+    );
   }
 
   return (
-    <Box>
-      <Box mb={2}>
-        <Breadcrumbs>
-          <Link
-            component="button"
-            variant="body1"
-            onClick={() => navigate('/worlds')}
-            sx={{ textDecoration: 'none' }}
-          >
-            世界管理
-          </Link>
-          <Typography color="text.primary">
+    <div className="container mx-auto py-8 px-4 max-w-7xl">
+      <nav className="mb-6">
+        <ol className="flex items-center space-x-2 text-sm text-muted-foreground">
+          <li>
+            <button
+              onClick={() => navigate('/worlds')}
+              className="hover:text-foreground transition-colors"
+            >
+              世界管理
+            </button>
+          </li>
+          <li>/</li>
+          <li className="text-foreground font-medium">
             {world?.name} - キャラクター管理
-          </Typography>
-        </Breadcrumbs>
-      </Box>
+          </li>
+        </ol>
+      </nav>
 
-      <Box display="flex" justifyContent="space-between" alignItems="center" mb={3}>
-        <Typography variant="h4" component="h1">
-          キャラクター管理
-        </Typography>
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight mb-2">キャラクター管理</h1>
+          {world && (
+            <p className="text-muted-foreground">{world.name}の世界に登露されたキャラクターを管理できます。</p>
+          )}
+        </div>
         <Button
-          startIcon={<ArrowBackIcon />}
+          variant="outline"
           onClick={() => navigate('/worlds')}
+          className="gap-2"
         >
+          <ArrowLeft className="h-4 w-4" />
           世界一覧に戻る
         </Button>
-      </Box>
+      </div>
 
       {world && (
-        <Card sx={{ mb: 3 }}>
-          <CardContent>
-            <Typography variant="h6" gutterBottom>
-              世界: {world.name}
-            </Typography>
-            <Typography variant="body2" color="text.secondary">
-              {world.description}
-            </Typography>
-          </CardContent>
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-xl">世界: {world.name}</CardTitle>
+            <CardDescription>{world.description}</CardDescription>
+          </CardHeader>
         </Card>
       )}
 
-      <Grid container spacing={3}>
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {characters.map((character) => (
-          <Grid item xs={12} md={6} lg={4} key={character.id}>
-            <Card>
-              <CardContent>
-                <Typography variant="h6" component="h2" gutterBottom>
-                  {character.name}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  {character.description}
-                </Typography>
-                <Typography variant="body2" color="text.secondary" gutterBottom>
-                  性格: {character.personality}
-                </Typography>
-                <Typography variant="body2" color="text.secondary">
-                  背景: {character.background.substring(0, 100)}
-                  {character.background.length > 100 ? '...' : ''}
-                </Typography>
-              </CardContent>
-              <CardActions>
-                <Button
-                  size="small"
-                  startIcon={<EditIcon />}
-                  onClick={() => handleOpenDialog(character)}
-                >
-                  編集
-                </Button>
-                <Button
-                  size="small"
-                  startIcon={<DeleteIcon />}
-                  onClick={() => handleDelete(character.id)}
-                  color="error"
-                >
-                  削除
-                </Button>
-              </CardActions>
-            </Card>
-          </Grid>
+          <Card key={character.id} className="hover:shadow-md transition-shadow">
+            <CardHeader>
+              <CardTitle className="text-xl">{character.name}</CardTitle>
+              <CardDescription className="text-sm text-muted-foreground">
+                {character.description}
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-2 text-sm">
+                <p>
+                  <span className="font-medium text-foreground">性格:</span>
+                  <span className="text-muted-foreground ml-1">{character.personality}</span>
+                </p>
+                <p>
+                  <span className="font-medium text-foreground">背景:</span>
+                  <span className="text-muted-foreground ml-1">
+                    {character.background.substring(0, 100)}
+                    {character.background.length > 100 ? '...' : ''}
+                  </span>
+                </p>
+              </div>
+            </CardContent>
+            <CardFooter className="flex gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => handleOpenDialog(character)}
+                className="gap-1"
+              >
+                <Edit className="h-3 w-3" />
+                編集
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => handleDelete(character.id)}
+                className="gap-1 text-destructive hover:text-destructive"
+              >
+                <Trash2 className="h-3 w-3" />
+                削除
+              </Button>
+            </CardFooter>
+          </Card>
         ))}
-      </Grid>
+      </div>
 
-      <Fab
-        color="primary"
-        aria-label="add"
+      <Button
         onClick={() => handleOpenDialog()}
-        sx={{ position: 'fixed', bottom: 16, right: 16 }}
+        className="fixed bottom-6 right-6 h-14 w-14 rounded-full shadow-lg"
+        size="icon"
       >
-        <AddIcon />
-      </Fab>
+        <Plus className="h-6 w-6" />
+      </Button>
 
-      <Dialog open={dialogOpen} onClose={handleCloseDialog} maxWidth="md" fullWidth>
-        <DialogTitle>
-          {editingCharacter ? 'キャラクターを編集' : '新しいキャラクターを作成'}
-        </DialogTitle>
-        <DialogContent>
-          <TextField
-            autoFocus
-            margin="dense"
-            label="キャラクター名"
-            fullWidth
-            variant="outlined"
-            value={formData.name}
-            onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            margin="dense"
-            label="説明"
-            fullWidth
-            multiline
-            rows={3}
-            variant="outlined"
-            value={formData.description}
-            onChange={(e) => setFormData({ ...formData, description: e.target.value })}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            margin="dense"
-            label="性格"
-            fullWidth
-            multiline
-            rows={3}
-            variant="outlined"
-            value={formData.personality}
-            onChange={(e) => setFormData({ ...formData, personality: e.target.value })}
-            sx={{ mb: 2 }}
-          />
-          <TextField
-            margin="dense"
-            label="背景"
-            fullWidth
-            multiline
-            rows={4}
-            variant="outlined"
-            value={formData.background}
-            onChange={(e) => setFormData({ ...formData, background: e.target.value })}
-          />
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="sm:max-w-[525px]">
+          <DialogHeader>
+            <DialogTitle>
+              {editingCharacter ? 'キャラクターを編集' : '新しいキャラクターを作成'}
+            </DialogTitle>
+          </DialogHeader>
+          <div className="grid gap-4 py-4">
+            <div className="grid gap-2">
+              <Label htmlFor="name">キャラクター名</Label>
+              <Input
+                id="name"
+                value={formData.name}
+                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                placeholder="キャラクターの名前を入力してください"
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="description">説明</Label>
+              <Textarea
+                id="description"
+                value={formData.description}
+                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                placeholder="キャラクターの簡単な説明を入力してください"
+                rows={3}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="personality">性格</Label>
+              <Textarea
+                id="personality"
+                value={formData.personality}
+                onChange={(e) => setFormData({ ...formData, personality: e.target.value })}
+                placeholder="キャラクターの性格や特徴を入力してください"
+                rows={3}
+              />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="background">背景</Label>
+              <Textarea
+                id="background"
+                value={formData.background}
+                onChange={(e) => setFormData({ ...formData, background: e.target.value })}
+                placeholder="キャラクターの背景や経歴を入力してください"
+                rows={4}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={handleCloseDialog}>
+              キャンセル
+            </Button>
+            <Button onClick={handleSubmit}>
+              {editingCharacter ? '更新' : '作成'}
+            </Button>
+          </DialogFooter>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={handleCloseDialog}>キャンセル</Button>
-          <Button onClick={handleSubmit} variant="contained">
-            {editingCharacter ? '更新' : '作成'}
-          </Button>
-        </DialogActions>
       </Dialog>
-    </Box>
+    </div>
   );
 };
 

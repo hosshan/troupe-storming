@@ -29,6 +29,7 @@ const DiscussionsPage: React.FC = () => {
     theme: '',
     description: '',
     world_id: parseInt(worldId || '0'),
+    turn_count: 1,
   });
 
   useEffect(() => {
@@ -73,6 +74,7 @@ const DiscussionsPage: React.FC = () => {
       theme: '',
       description: '',
       world_id: parseInt(worldId || '0'),
+      turn_count: 1,
     });
     setDialogOpen(true);
   };
@@ -83,6 +85,7 @@ const DiscussionsPage: React.FC = () => {
       theme: '',
       description: '',
       world_id: parseInt(worldId || '0'),
+      turn_count: 1,
     });
   };
 
@@ -230,9 +233,14 @@ const DiscussionsPage: React.FC = () => {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <p className="text-xs text-muted-foreground">
-                作成日: {new Date(discussion.created_at).toLocaleDateString('ja-JP')}
-              </p>
+              <div className="space-y-1">
+                <p className="text-xs text-muted-foreground">
+                  作成日: {new Date(discussion.created_at).toLocaleDateString('ja-JP')}
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  会話ターン数: {discussion.turn_count}ターン
+                </p>
+              </div>
             </CardContent>
             <CardFooter className="flex gap-2">
               {discussion.status === 'pending' && characters.length > 0 && (
@@ -292,6 +300,21 @@ const DiscussionsPage: React.FC = () => {
                 placeholder="議論の詳細や背景を入力してください"
                 rows={4}
               />
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="turn_count">会話ターン数</Label>
+              <Input
+                id="turn_count"
+                type="number"
+                min="1"
+                max="10"
+                value={formData.turn_count}
+                onChange={(e) => setFormData({ ...formData, turn_count: parseInt(e.target.value) || 1 })}
+                placeholder="1"
+              />
+              <p className="text-xs text-muted-foreground">
+                議論の長さを指定します。ターン数が多いほど長い議論になります（1-10）
+              </p>
             </div>
           </div>
           <DialogFooter>

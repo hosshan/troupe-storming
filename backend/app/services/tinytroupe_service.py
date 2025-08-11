@@ -127,7 +127,7 @@ class TinyTroupeService:
             logger.error(f"📋 Full traceback: {traceback.format_exc()}")
             return None
     
-    async def setup_world_agents(self, world: World, characters: List[Character], stream_data=None) -> Tuple[Optional[Any], List[Any]]:
+    async def setup_world_agents(self, world: World, characters: List[Character], discussion: Discussion = None, stream_data=None) -> Tuple[Optional[Any], List[Any]]:
         """Create a TinyWorld and populate it with TinyPerson agents."""
         if not self.tinytroupe_available:
             logger.warning("❌ TinyTroupe not available")
@@ -174,6 +174,9 @@ class TinyTroupeService:
                 await asyncio.sleep(0.1)
             
             # Create the world environment
+            # Get turn count from discussion or use default
+            turn_count = getattr(discussion, 'turn_count', 1) if discussion else 1
+            
             tiny_world = TinyWorld(
                 name=unique_world_name,
                 agents=[],  # Initialize with empty agents list
@@ -181,6 +184,7 @@ class TinyTroupeService:
             )
             
             logger.info(f"✅ TinyWorld '{unique_world_name}' created successfully")
+            logger.info(f"🔍 Turn count for discussion: {turn_count}")
             
             # Set world context/background (remove deprecated method)
             # tiny_world.set_communication_display(True)  # This method may not exist in current version
@@ -253,11 +257,13 @@ class TinyTroupeService:
     
     async def run_discussion(self, discussion: Discussion, characters: List[Character], world: World, stream_data=None, discussion_id=None) -> Dict[str, Any]:
         """Run a discussion simulation using TinyTroupe or fallback methods with optional streaming support."""
+        turn_count = getattr(discussion, 'turn_count', 1)
         logger.info(f"=== STARTING DISCUSSION: {discussion.theme} ===")
         logger.info(f"TinyTroupe available: {self.tinytroupe_available}")
         logger.info(f"OpenAI available: {self.openai_available}")
         logger.info(f"API key present: {bool(self.api_key)}")
         logger.info(f"Number of characters: {len(characters)}")
+        logger.info(f"Turn count: {turn_count}")
         logger.info(f"Streaming mode: {stream_data is not None}")
         
         try:
@@ -353,7 +359,7 @@ class TinyTroupeService:
             logger.info("🌍 Creating TinyWorld and agents...")
             logger.info(f"📊 Input data - World: {world.name}, Characters: {[c.name for c in characters]}")
             
-            tiny_world, agents = await self.setup_world_agents(world, characters)
+            tiny_world, agents = await self.setup_world_agents(world, characters, discussion)
             
             logger.info(f"🔍 Setup result - TinyWorld: {tiny_world is not None}, Agents count: {len(agents) if agents else 0}")
             
@@ -388,6 +394,9 @@ class TinyTroupeService:
             
             # Have each agent think about and respond to the topic
             logger.info("💭 Starting agent discussions...")
+            # Get turn count from discussion or use default
+            turn_count = getattr(discussion, 'turn_count', 1) if discussion else 1
+            tiny_world.run(turn_count, return_actions=True)
             for i, agent in enumerate(agents):
                 try:
                     logger.info(f"🤖 Processing agent {i+1}/{len(agents)}: {agent.name}")
@@ -514,9 +523,10 @@ class TinyTroupeService:
             # Try to get any additional world interactions
             logger.info("🌍 Running world simulation...")
             try:
-                # Run a brief world simulation if possible
-                logger.info("⚙️ Executing tiny_world.run(3)...")
-                tiny_world.run(2)
+                # Run world simulation with specified turn count
+                turn_count = getattr(discussion, 'turn_count', 1)
+                logger.info(f"⚙️ Executing tiny_world.run({turn_count})...")
+                tiny_world.run(turn_count, return_all_actions=True)
                 logger.info("✅ World simulation completed")
                 
                 logger.info("📥 Extracting messages from world...")
@@ -859,7 +869,7 @@ class TinyTroupeService:
 
             
             # Create TinyWorld and agents with streaming updates
-            tiny_world, agents = await self.setup_world_agents(world, characters, stream_data)
+            tiny_world, agents = await self.setup_world_agents(world, characters, discussion, stream_data)
             
             if not tiny_world or not agents:
                 logger.error("❌ TinyWorld or agents creation failed")
@@ -907,6 +917,9 @@ class TinyTroupeService:
             
             # Have each agent respond one by one with real-time updates
             logger.info("💭 Starting agent discussions with streaming...")
+            # Get turn count from discussion or use default
+            turn_count = getattr(discussion, 'turn_count', 1) if discussion else 1
+            tiny_world.run(turn_count, return_actions=True)
             for i, agent in enumerate(agents):
                 try:
                     logger.info(f"🤖 Processing agent {i+1}/{len(agents)}: {agent.name}")

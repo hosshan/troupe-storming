@@ -21,7 +21,9 @@
       "Bash(git add:*)",
       "Bash(git commit:*)",
       "Bash(git log:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(true)"
     ],
     "deny": []
   }

@@ -26,6 +26,7 @@ export interface Discussion {
   world_id: number;
   status: 'pending' | 'running' | 'completed' | 'failed';
   result?: any;
+  turn_count: number;
   created_at: string;
   updated_at?: string;
 }
@@ -49,4 +50,5 @@ export interface CreateDiscussionRequest {
   theme: string;
   description: string;
   world_id: number;
+  turn_count: number;
 }

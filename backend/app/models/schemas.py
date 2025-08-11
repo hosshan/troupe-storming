@@ -26,7 +26,7 @@ class World(WorldBase):
     updated_at: Optional[datetime] = None
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class CharacterBase(BaseModel):
     name: str
@@ -52,12 +52,13 @@ class Character(CharacterBase):
     updated_at: Optional[datetime] = None
     
     class Config:
-        orm_mode = True
+        from_attributes = True
 
 class DiscussionBase(BaseModel):
     theme: str
     description: str
     world_id: int
+    turn_count: int = 1
 
 class DiscussionCreate(DiscussionBase):
     pass
@@ -67,6 +68,7 @@ class DiscussionUpdate(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = None
     result: Optional[Any] = None
+    turn_count: Optional[int] = None
 
 class Discussion(DiscussionBase):
     id: int
@@ -76,4 +78,4 @@ class Discussion(DiscussionBase):
     updated_at: Optional[datetime] = None
     
     class Config:
-        orm_mode = True
+        from_attributes = True

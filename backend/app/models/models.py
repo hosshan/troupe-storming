@@ -40,6 +40,7 @@ class Discussion(Base):
     world_id = Column(Integer, ForeignKey("worlds.id"))
     status = Column(String(20), default="pending")
     result = Column(JSON)
+    turn_count = Column(Integer, default=1)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), onupdate=func.now())
     

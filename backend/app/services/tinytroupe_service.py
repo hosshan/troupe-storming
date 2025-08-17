@@ -147,11 +147,10 @@ class TinyTroupeService:
                     # その他のエラーの場合は再試行
                     logger.info("Retrying world simulation...")
                     try:
-                        actions = tiny_world.run(turn_count, return_actions=True)
+                        tiny_world.run(turn_count, return_actions=True)
                         stream_data["message"] = f"✅ {turn_count}ターンの議論が完了しました（再試行成功）"
                     except Exception as retry_e:
                         logger.error(f"Retry also failed: {retry_e}")
-                        actions = []
                         stream_data["message"] = f"❌ 議論の実行に失敗しました: {str(retry_e)}"
             
             await asyncio.sleep(0.2)
@@ -164,6 +163,8 @@ class TinyTroupeService:
             messages = [self._create_system_message(discussion)]
             stream_data["messages"] = messages.copy()
             await asyncio.sleep(0.1)
+
+            actions = tiny_world.pop_latest_actions()
             
             # 取得した行動から発言を抽出
             if actions and isinstance(actions, list):
@@ -177,10 +178,9 @@ class TinyTroupeService:
                             action_type = action.action_type
                             
                             logger.info(f"Action: {agent_name} -> {action_type}")
-                            
                             # TALKアクションの場合、発言内容を取得
-                            if action_type == 'TALK' and hasattr(action, 'content'):
-                                content = str(action.content)
+                            if action_type == 'TALK':
+                                content = action.get("content", "")
                                 if content.strip():
                                     new_message = {
                                         "speaker": agent_name,
@@ -196,8 +196,8 @@ class TinyTroupeService:
                                     await asyncio.sleep(0.3)
                             
                             # THINKアクションの場合、思考内容を取得（オプション）
-                            elif action_type == 'THINK' and hasattr(action, 'content'):
-                                content = str(action.content)
+                            elif action_type == 'THINK':
+                                content = action.get("content", "")
                                 if content.strip():
                                     new_message = {
                                         "speaker": agent_name,

@@ -90,3 +90,6 @@ Thumbs.db
 # TinyTroupe specific
 tinytroupe_config/
 *.json.bak
+
+# TinyTroupe Library
+TinyTroupe/

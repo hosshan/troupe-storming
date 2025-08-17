@@ -49,8 +49,6 @@ class TinyTroupeService:
                 agent.max_response_length = 500  # レスポンス長を制限
             
             logger.info(f"Agent {character.name} created successfully")
-            logger.info(f"{agent.minibio()}")
-            
             return agent
         except Exception as e:
             logger.error(f"Failed to create agent for {character.name}: {e}")
@@ -70,6 +68,8 @@ class TinyTroupeService:
             stream_data["progress"] = 0
             stream_data["message"] = "TinyTroupe議論を開始中..."
             stream_data["messages"] = []
+            TinyPerson.clear_agents()
+            TinyWorld.clear_environments()
             
             # 1. エージェント作成
             stream_data["progress"] = 10

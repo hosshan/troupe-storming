@@ -121,9 +121,11 @@ class TinyTroupeService:
             それぞれの意見をお願いします。
             """
             
-            # 4. ワールドにメッセージを送信
+            # 4. ワールドに最初の議論テーマのメッセージを送信
             tiny_world.broadcast(discussion_prompt)
             stream_data["message"] = f"💬 議論テーマ「{discussion.theme}」を送信しました"
+            # メッセージリストを初期化
+            messages = [self._create_start_discussion_message(discussion)]
             await asyncio.sleep(0.2)
             
             # 5. 議論実行
@@ -144,76 +146,29 @@ class TinyTroupeService:
                     stream_data["message"] = f"⚠️ トークン制限により一部の処理が完了しませんでしたが、利用可能な結果を取得します"
                     actions = []  # 空のリストでフォールバック
                 else:
-                    # その他のエラーの場合は再試行
-                    logger.info("Retrying world simulation...")
-                    try:
-                        tiny_world.run(turn_count, return_actions=True)
-                        stream_data["message"] = f"✅ {turn_count}ターンの議論が完了しました（再試行成功）"
-                    except Exception as retry_e:
-                        logger.error(f"Retry also failed: {retry_e}")
-                        stream_data["message"] = f"❌ 議論の実行に失敗しました: {str(retry_e)}"
+                    stream_data["message"] = f"❌ 議論の実行に失敗しました: {str(e)}"
+                    raise e
             
             await asyncio.sleep(0.2)
             
-            # 6. 結果抽出
-            stream_data["progress"] = 80
-            stream_data["message"] = "議論結果を抽出中..."
-            await asyncio.sleep(0.1)
-            
-            messages = [self._create_system_message(discussion)]
-            stream_data["messages"] = messages.copy()
-            await asyncio.sleep(0.1)
-
-            # actions = tiny_world.pop_latest_actions()
-            
-            # 取得した行動から発言を抽出
-            if actions and isinstance(actions, list):
-                logger.info(f"Retrieved {len(actions)} actions from world simulation")
-                
-                # 行動を時系列順にソート（必要に応じて）
-                for action in actions:
-                    try:
-                        if hasattr(action, 'agent') and hasattr(action, 'action_type'):
-                            agent_name = action.agent.name if hasattr(action.agent, 'name') else str(action.agent)
-                            action_type = action.action_type
-                            
-                            logger.info(f"Action: {agent_name} -> {action_type}")
-                            # TALKアクションの場合、発言内容を取得
-                            if action_type == 'TALK':
-                                content = action.get("content", "")
-                                if content.strip():
-                                    new_message = {
-                                        "speaker": agent_name,
-                                        "content": content,
-                                        "timestamp": datetime.datetime.now().isoformat()
-                                    }
-                                    messages.append(new_message)
-                                    stream_data["messages"] = messages.copy()
-                                    
-                                    # 発言のプレビューを表示
-                                    preview = content[:100] + "..." if len(content) > 100 else content
-                                    stream_data["message"] = f"💬 {agent_name}: {preview}"
-                                    await asyncio.sleep(0.3)
-                            
-                            # THINKアクションの場合、思考内容を取得（オプション）
-                            elif action_type == 'THINK':
-                                content = action.get("content", "")
-                                if content.strip():
-                                    new_message = {
-                                        "speaker": agent_name,
-                                        "content": f"[思考] {content}",
-                                        "timestamp": datetime.datetime.now().isoformat()
-                                    }
-                                    messages.append(new_message)
-                                    stream_data["messages"] = messages.copy()
-                                    
-                                    preview = content[:100] + "..." if len(content) > 100 else content
-                                    stream_data["message"] = f"🤔 {agent_name}: {preview}"
-                                    await asyncio.sleep(0.3)
+            for item in range(turn_count):
+                for agent in agents:
+                    agent.listen_and_act(f"「{discussion.theme}」について、簡潔に意見を述べてください。")
+                    content = agent.pop_actions_and_get_contents_for("TALK", only_last_action=False)
+                    logger.info(f"Act Action: {agent.name} -> {content}")
+                    # TALKアクションの場合、発言内容を取得
+                    new_message = {
+                        "speaker": agent.name,
+                        "content": content,
+                        "timestamp": datetime.datetime.now().isoformat()
+                    }
+                    messages.append(new_message)
+                    stream_data["messages"] = messages.copy()
                     
-                    except Exception as e:
-                        logger.warning(f"Error processing action: {e}")
-                        continue
+                    # 発言のプレビューを表示
+                    preview = content[:100] + "..." if len(content) > 100 else content
+                    stream_data["message"] = f"💬 {agent.name}: {preview}"
+                    await asyncio.sleep(0.3)
             
             # 完了
             stream_data["progress"] = 100
@@ -227,12 +182,16 @@ class TinyTroupeService:
             stream_data["message"] = f"❌ エラーが発生しました: {str(e)}"
             stream_data["error"] = str(e)
             return self._create_fallback_response(discussion, characters, world, stream_data)
-    
-    def _create_system_message(self, discussion) -> dict:
+
+    def _create_start_discussion_message(self, discussion) -> dict:
         """議論開始システムメッセージを生成"""
+        return _create_system_message(f"議論テーマ「{discussion.theme}」について話し合いを開始します。")
+    
+    def _create_system_message(self, content) -> dict:
+        """システムメッセージを生成"""
         return {
             "speaker": "システム",
-            "content": f"議論テーマ「{discussion.theme}」について話し合いを開始します。",
+            "content": content,
             "timestamp": datetime.datetime.now().isoformat()
         }
     
